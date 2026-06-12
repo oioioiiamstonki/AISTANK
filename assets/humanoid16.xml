@@ -1,0 +1,105 @@
+<!--
+  humanoid16.xml — simplified 16-DoF humanoid for batched walking RL.
+
+  DoF budget (16 actuated, + free-joint root = 22 qvel total):
+    abdomen   : 2  (pitch y, roll x)
+    hip   ×2  : 3 each (x roll, y pitch, z yaw)   = 6
+    knee  ×2  : 1 each (pitch)                    = 2
+    ankle ×2  : 2 each (pitch, roll)              = 4
+    shoulder×2: 1 each (pitch — arms as balancers)= 2
+    total                                          16
+
+  Conventions: x = forward walk direction, z = up. Torques normalized so the
+  policy emits actions in [-1, 1] (gear handles scaling). Solver settings tuned
+  for throughput at 4096 parallel envs (large batches favor cheap iterations).
+-->
+<mujoco model="humanoid16">
+  <compiler angle="radian" inertiafromgeom="true"/>
+  <option timestep="0.004166" iterations="6" solver="Newton" integrator="implicitfast"/>
+
+  <default>
+    <joint armature="0.01" damping="1.5" limited="true"/>
+    <geom condim="3" friction="1.0 0.05 0.05" density="1000" margin="0.001"/>
+    <motor ctrllimited="true" ctrlrange="-1 1"/>
+  </default>
+
+  <worldbody>
+    <geom name="floor" type="plane" size="200 200 0.1" rgba="0.85 0.85 0.85 1"/>
+
+    <body name="torso" pos="0 0 1.05">
+      <freejoint name="root"/>
+      <geom name="torso_geom" type="capsule" fromto="0 0 -0.12 0 0 0.19" size="0.10"/>
+      <geom name="head" type="sphere" pos="0 0 0.32" size="0.09"/>
+
+      <!-- Arms: single-DoF pitch, pure balance aids -->
+      <body name="upper_arm_r" pos="0 -0.17 0.14">
+        <joint name="shoulder_r" type="hinge" axis="0 1 0" range="-1.5 1.5"/>
+        <geom type="capsule" fromto="0 0 0 0 -0.05 -0.30" size="0.035"/>
+      </body>
+      <body name="upper_arm_l" pos="0 0.17 0.14">
+        <joint name="shoulder_l" type="hinge" axis="0 1 0" range="-1.5 1.5"/>
+        <geom type="capsule" fromto="0 0 0 0 0.05 -0.30" size="0.035"/>
+      </body>
+
+      <body name="pelvis" pos="0 0 -0.20">
+        <joint name="abdomen_y" type="hinge" axis="0 1 0" range="-0.7 0.9"/>
+        <joint name="abdomen_x" type="hinge" axis="1 0 0" range="-0.5 0.5"/>
+        <geom name="pelvis_geom" type="capsule" fromto="0 -0.06 0 0 0.06 0" size="0.085"/>
+
+        <!-- Right leg -->
+        <body name="thigh_r" pos="0 -0.09 -0.06">
+          <joint name="hip_x_r" type="hinge" axis="1 0 0" range="-0.45 0.45"/>
+          <joint name="hip_y_r" type="hinge" axis="0 1 0" range="-1.8 0.6"/>
+          <joint name="hip_z_r" type="hinge" axis="0 0 1" range="-0.6 0.6"/>
+          <geom type="capsule" fromto="0 0 0 0 0 -0.38" size="0.055"/>
+          <body name="shin_r" pos="0 0 -0.38">
+            <joint name="knee_r" type="hinge" axis="0 1 0" range="0.02 2.4"/>
+            <geom type="capsule" fromto="0 0 0 0 0 -0.38" size="0.045"/>
+            <body name="foot_r" pos="0 0 -0.40">
+              <joint name="ankle_y_r" type="hinge" axis="0 1 0" range="-0.9 0.9"/>
+              <joint name="ankle_x_r" type="hinge" axis="1 0 0" range="-0.4 0.4"/>
+              <geom name="foot_r_geom" type="box" pos="0.05 0 -0.02" size="0.11 0.05 0.025"/>
+            </body>
+          </body>
+        </body>
+
+        <!-- Left leg -->
+        <body name="thigh_l" pos="0 0.09 -0.06">
+          <joint name="hip_x_l" type="hinge" axis="1 0 0" range="-0.45 0.45"/>
+          <joint name="hip_y_l" type="hinge" axis="0 1 0" range="-1.8 0.6"/>
+          <joint name="hip_z_l" type="hinge" axis="0 0 1" range="-0.6 0.6"/>
+          <geom type="capsule" fromto="0 0 0 0 0 -0.38" size="0.055"/>
+          <body name="shin_l" pos="0 0 -0.38">
+            <joint name="knee_l" type="hinge" axis="0 1 0" range="0.02 2.4"/>
+            <geom type="capsule" fromto="0 0 0 0 0 -0.38" size="0.045"/>
+            <body name="foot_l" pos="0 0 -0.40">
+              <joint name="ankle_y_l" type="hinge" axis="0 1 0" range="-0.9 0.9"/>
+              <joint name="ankle_x_l" type="hinge" axis="1 0 0" range="-0.4 0.4"/>
+              <geom name="foot_l_geom" type="box" pos="0.05 0 -0.02" size="0.11 0.05 0.025"/>
+            </body>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <!-- Actuator order defines the action vector layout (ActionDim = 16). -->
+  <actuator>
+    <motor name="a_abdomen_y"  joint="abdomen_y"  gear="100"/>
+    <motor name="a_abdomen_x"  joint="abdomen_x"  gear="100"/>
+    <motor name="a_hip_x_r"    joint="hip_x_r"    gear="120"/>
+    <motor name="a_hip_y_r"    joint="hip_y_r"    gear="160"/>
+    <motor name="a_hip_z_r"    joint="hip_z_r"    gear="60"/>
+    <motor name="a_knee_r"     joint="knee_r"     gear="120"/>
+    <motor name="a_ankle_y_r"  joint="ankle_y_r"  gear="60"/>
+    <motor name="a_ankle_x_r"  joint="ankle_x_r"  gear="40"/>
+    <motor name="a_hip_x_l"    joint="hip_x_l"    gear="120"/>
+    <motor name="a_hip_y_l"    joint="hip_y_l"    gear="160"/>
+    <motor name="a_hip_z_l"    joint="hip_z_l"    gear="60"/>
+    <motor name="a_knee_l"     joint="knee_l"     gear="120"/>
+    <motor name="a_ankle_y_l"  joint="ankle_y_l"  gear="60"/>
+    <motor name="a_ankle_x_l"  joint="ankle_x_l"  gear="40"/>
+    <motor name="a_shoulder_r" joint="shoulder_r" gear="40"/>
+    <motor name="a_shoulder_l" joint="shoulder_l" gear="40"/>
+  </actuator>
+</mujoco>

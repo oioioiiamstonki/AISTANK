@@ -1,0 +1,13 @@
+build/
+out/
+bin/
+obj/
+.vs/
+.vscode/
+*.user
+*.suo
+CMakeUserPresets.json
+*.cso
+*.pdb
+checkpoints/
+runs/

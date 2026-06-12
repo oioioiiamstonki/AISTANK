@@ -1,0 +1,85 @@
+// AistankApi.cpp — flat C ABI implementation bridging to EngineCore/SimulationLoop.
+#include "../include/aistank.h"
+#include "EngineCore.h"
+#include "SimulationLoop.h"
+
+#include <memory>
+#include <string>
+
+// Opaque handle: owns core + loop. Loop declared after core so it is destroyed
+// first (it references core's queues during teardown).
+struct AistankEngine {
+    std::unique_ptr<aistank::EngineCore>     core;
+    std::unique_ptr<aistank::SimulationLoop> loop;
+    std::string lastError;
+};
+
+namespace aistank { void SetPolicyParamBytesForUpload(uint64_t); }
+
+extern "C" {
+
+AISTANK_API AistankResult Engine_Create(const AistankConfig* cfg,
+                                        const char* mjcf_path,
+                                        AistankEngine** out_engine) {
+    if (!cfg || !mjcf_path || !out_engine) return AISTANK_ERR_BAD_ARG;
+    auto* e = new (std::nothrow) AistankEngine();
+    if (!e) return AISTANK_ERR_OOM;
+    try {
+        e->core = std::make_unique<aistank::EngineCore>(*cfg, mjcf_path);
+        aistank::SetPolicyParamBytesForUpload(e->core->PolicyParamCount() * 4);
+        e->loop = std::make_unique<aistank::SimulationLoop>(*e->core);
+        *out_engine = e;
+        return AISTANK_OK;
+    } catch (const std::exception& ex) {
+        e->lastError = ex.what();
+        // Leak-free failure path: report the error via a static slot since the
+        // handle is being destroyed. Callers get the code; message goes to stderr.
+        fprintf(stderr, "[aistank] Engine_Create failed: %s\n", ex.what());
+        delete e;
+        *out_engine = nullptr;
+        return AISTANK_ERR_DEVICE;
+    }
+}
+
+AISTANK_API void Engine_Destroy(AistankEngine* e) {
+    delete e;  // loop first (member order), then core (drains queues)
+}
+
+AISTANK_API AistankResult Engine_Tick(AistankEngine* e, AistankStepStats* out_stats) {
+    if (!e || !out_stats) return AISTANK_ERR_BAD_ARG;
+    return e->loop->Tick(*out_stats);
+}
+
+AISTANK_API AistankResult Engine_SetPolicyWeights(AistankEngine* e,
+                                                  const float* params, uint64_t count) {
+    if (!e || !params) return AISTANK_ERR_BAD_ARG;
+    return e->loop->SetPolicyWeights(params, count);
+}
+
+AISTANK_API uint64_t Engine_GetPolicyParamCount(const AistankEngine* e) {
+    return e ? e->core->PolicyParamCount() : 0;
+}
+
+AISTANK_API AistankResult Engine_MapRollout(AistankEngine* e,
+                                            const float** obs, const float** act,
+                                            const float** rew, const uint8_t** done,
+                                            const float** val,
+                                            uint32_t* horizon, uint32_t* obsDim,
+                                            uint32_t* actDim) {
+    if (!e) return AISTANK_ERR_BAD_ARG;
+    return e->loop->MapRollout(obs, act, rew, done, val, horizon, obsDim, actDim);
+}
+
+AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e) {
+    return e ? e->core->ObsDim() : 0;
+}
+
+AISTANK_API uint32_t Engine_GetActionDim(const AistankEngine* e) {
+    return e ? e->core->ActDim() : 0;
+}
+
+AISTANK_API const char* Engine_GetLastError(const AistankEngine* e) {
+    return e ? e->lastError.c_str() : "";
+}
+
+} // extern "C"
