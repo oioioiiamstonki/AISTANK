@@ -11,3 +11,5 @@ CMakeUserPresets.json
 *.pdb
 checkpoints/
 runs/
+# Published self-contained exe (154 MB — over GitHub's 100 MB limit; shipped via Releases)
+/RobotSchool.exe
