@@ -1,0 +1,65 @@
+<Window x:Class="Aistank.Editor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Robot School" Width="1024" Height="720" MinWidth="760" MinHeight="560"
+        Background="#1E1B2E" WindowStartupLocation="CenterScreen">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Title -->
+        <TextBlock Grid.Row="0" Text="🤖 ROBOT SCHOOL" FontSize="40" FontWeight="ExtraBold"
+                   Foreground="#FFD93D" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+
+        <!-- Viewport: cartoon robot stage -->
+        <Border Grid.Row="1" CornerRadius="20" ClipToBounds="True">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#7EC8E3" Offset="0"/>
+                    <GradientStop Color="#BDE3F0" Offset="0.78"/>
+                    <GradientStop Color="#7BB662" Offset="0.78"/>
+                    <GradientStop Color="#5E9C4C" Offset="1"/>
+                </LinearGradientBrush>
+            </Border.Background>
+            <Grid>
+                <Canvas x:Name="Stage"/>
+                <TextBlock x:Name="SpeechBubble" FontSize="26" FontWeight="Bold" Foreground="#333"
+                           HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,18,0,0"/>
+                <Border x:Name="DemoBanner" Background="#CC333355" CornerRadius="10" Padding="10,5"
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,12,12"
+                        Visibility="Collapsed">
+                    <TextBlock Text="demo mode — build the engine for real GPU training"
+                               Foreground="#DDD" FontSize="12"/>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Skill meter -->
+        <Grid Grid.Row="2" Margin="0,16,0,4" HorizontalAlignment="Center">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="How good is my robot? " FontSize="22" Foreground="White"
+                           VerticalAlignment="Center"/>
+                <Border Background="#332F45" CornerRadius="12" Width="320" Height="26"
+                        VerticalAlignment="Center" Margin="10,0">
+                    <Border x:Name="SkillFill" Background="#FFD93D" CornerRadius="12"
+                            HorizontalAlignment="Left" Width="0"/>
+                </Border>
+                <TextBlock x:Name="StarsText" FontSize="24" VerticalAlignment="Center" Text="☆☆☆☆☆"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,12,0,4">
+            <Button x:Name="TrainButton" Style="{StaticResource BigButton}" Background="#43AA8B"
+                    Click="OnTrain" Content="🏋️ TRAIN"/>
+            <Button x:Name="PlayButton" Style="{StaticResource BigButton}" Background="#4D96FF"
+                    Click="OnPlay" Content="▶️ PLAY"/>
+            <Button x:Name="StopButton" Style="{StaticResource BigButton}" Background="#FF6B6B"
+                    Click="OnStop" Content="⏹ STOP" IsEnabled="False"/>
+        </StackPanel>
+    </Grid>
+</Window>

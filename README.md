@@ -24,14 +24,36 @@ via DirectX 12 / DirectCompute, with the CPU acting only as a command-list sched
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+## 🤖 Robot School — the editor
+
+A deliberately tiny editor (think Unity/Godot reduced to its essence) designed so an
+eight-year-old can use it: three giant buttons and a robot.
+
+- **🏋️ TRAIN** — starts reinforcement learning. The skill meter and star rating climb as the
+  robot learns; the cartoon robot in the viewport wobbles less and strides further.
+- **▶️ PLAY** — runs the current policy with learning frozen, so you can watch what the robot
+  knows so far.
+- **⏹ STOP** — robot takes a break.
+
+```sh
+dotnet run --project editor
+```
+
+It works out of the box: if the native engine DLL isn't built yet (or there's no DX12 GPU),
+the editor falls back to a built-in **demo mode** with a simulated learning curve, so the
+buttons always do something. With the engine built, the same buttons drive real GPU training
+across 4096 humanoids, and the skill meter shows normalized mean reward.
+
 ## Layout
 
 | Path | Contents |
 |---|---|
+| [`editor/`](editor) | **Robot School** — WPF editor with Train / Play / Stop buttons |
 | [`src/`](src) | C++20 core engine: DX12 device/queues, MuJoCo context, simulation loop |
 | [`shaders/`](shaders) | HLSL compute shaders: observation, policy inference, reward/termination |
 | [`include/`](include) | Flat C ABI consumed by the C# bindings |
-| [`bindings/csharp/`](bindings/csharp) | Zero-cost C# P/Invoke layer + training orchestration |
+| [`bindings/csharp/`](bindings/csharp) | Zero-cost C# P/Invoke layer + PPO trainer stub |
+| [`samples/TrainWalking/`](samples/TrainWalking) | Headless CLI training loop |
 | [`assets/`](assets) | MJCF humanoid asset (16 DoF) tuned for batched walking RL |
 | [`docs/`](docs) | Detailed architecture: GPU-resident loop, DX12 pipeline, policy execution |
 
@@ -61,7 +83,8 @@ cache line burst instead of 64 strided AoS loads.
 ```sh
 cmake -B build -G "Visual Studio 17 2022" -DMUJOCO_DIR=C:/path/to/mujoco-3.x
 cmake --build build --config Release
-dotnet build bindings/csharp
+dotnet run --project editor          # Robot School (works even without the native build)
+dotnet run --project samples/TrainWalking   # headless training CLI
 ```
 
 Requirements: Windows 10 2004+, DX12-capable GPU (SM 6.0+), [MuJoCo ≥ 3.0 C library](https://github.com/google-deepmind/mujoco/releases), CMake ≥ 3.24, .NET 8.
