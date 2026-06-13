@@ -114,6 +114,49 @@ public sealed class HumanoidEnvironment : IDisposable
             return Native.EngineGetAgentBodyPositions(_handle, agent, p) == AistankResult.Ok;
     }
 
+    // ---- GPU-resident PPO training -----------------------------------------
+
+    /// <summary>Allocates the GPU trainer (buffers, PSOs). Call once before GPU training.</summary>
+    public void InitGpuTrainer()
+    {
+        ThrowIfDisposed();
+        if (Native.EngineInitGpuTrainer(_handle) != AistankResult.Ok)
+            throw new InvalidOperationException($"InitGpuTrainer failed — {LastError()}");
+    }
+
+    /// <summary>Uploads initial policy weights into the GPU's slot 0 and zeroes Adam state.</summary>
+    public unsafe void InitPolicyWeights(ReadOnlySpan<float> weights)
+    {
+        ThrowIfDisposed();
+        fixed (float* p = weights)
+            if (Native.EngineInitPolicyWeights(_handle, p, (ulong)weights.Length) != AistankResult.Ok)
+                throw new InvalidOperationException($"InitPolicyWeights failed — {LastError()}");
+    }
+
+    /// <summary>Runs one PPO update entirely on the GPU. Returns mean reward over the horizon.</summary>
+    public float TrainStepGpu(uint epochs = 3)
+    {
+        ThrowIfDisposed();
+        if (Native.EngineTrainStepGpu(_handle, epochs, out float r) != AistankResult.Ok)
+            throw new InvalidOperationException($"TrainStepGpu failed — {LastError()}");
+        return r;
+    }
+
+    /// <summary>Copies the current GPU policy weights to CPU.</summary>
+    public unsafe void DownloadWeights(Span<float> dst)
+    {
+        ThrowIfDisposed();
+        fixed (float* p = dst) Native.EngineDownloadWeights(_handle, p, (ulong)dst.Length);
+    }
+
+    /// <summary>Parity test: one GPU forward/backward, then read the summed gradient.</summary>
+    public unsafe void GpuGradient(Span<float> grad)
+    {
+        ThrowIfDisposed();
+        Native.EngineRunGradientOnly(_handle);
+        fixed (float* p = grad) Native.EngineDownloadGrad(_handle, p, (ulong)grad.Length);
+    }
+
     /// <summary>Number of collision geoms in the model (includes the ground plane).</summary>
     public uint GeomCount => Native.EngineGetGeomCount(_handle);
 

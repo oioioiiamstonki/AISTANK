@@ -170,14 +170,19 @@ any intermediate tensors in default heap — and it keeps the entire tick inside
 
 - **Inference + rollout storage**: 100% GPU. Rollout buffers (obs/act/logp/reward/done/value ×
   horizon) are default-heap UAVs appended by `CS_RewardAndTerminate`.
-- **PPO update**: rollouts are read back once per *horizon* (32 ticks — amortized to noise)
-  into the C# trainer ([`PpoTrainer.cs`](../bindings/csharp/PpoTrainer.cs)), which runs the full
-  algorithm: GAE(λ) advantage estimation, advantage normalization, the clipped-surrogate +
-  value-MSE objective, analytic backprop through the same MLP topology the GPU runs, and a
-  multithreaded Adam step. The policy is treated as `Normal(tanh(z), σ)` with the fixed σ the
-  GPU samples with, so CPU log-probs and GPU actions never disagree. Updated weights go back
-  through the double-buffered weight ring. A future `CS_AdamStep` kernel can move even this
-  on-chip.
+- **PPO update (GPU-resident)**: the update runs entirely on the GPU as a chain of compute
+  dispatches ([`TrainShaders.hlsl`](../shaders/TrainShaders.hlsl), driven by
+  [`GpuTrainer`](../src/GpuTrainer.cpp)) over the rollout buffers that stay in VRAM — no
+  per-update readback. The chain is:
+  `CS_GAE` (one thread/agent, sequential over the horizon; float-atomic accumulation of the
+  advantage mean/var) → `CS_AdvNorm` → `CS_TrainForward` (one threadgroup/sample, activations to
+  VRAM) → `CS_TrainBackward` (per-sample dZ for all three layers) → `CS_WeightGrad` (tiled
+  `dW = dZᵀ·X` GEMM — the batch reduction that avoids per-weight atomics) + `CS_BiasGrad` →
+  `CS_Adam` (one thread/parameter). Weights are written in place; inference reads them as an SRV
+  next tick (state toggles SRV↔UAV around the update). `pre-activations` are never stored —
+  `elu'(z)` is recovered from the stored activation. The whole update is validated against the
+  CPU [`PpoTrainer.cs`](../bindings/csharp/PpoTrainer.cs) reference by a gradient-parity test
+  (relative L2 ≈ 6e-6).
 
 ### 3.3 Reward function (walking)
 

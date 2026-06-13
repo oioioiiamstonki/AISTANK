@@ -83,6 +83,24 @@ public static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "Engine_GetAgentGeomPose")]
     public static partial AistankResult EngineGetAgentGeomPose(IntPtr engine, uint agent, float* outXpos, float* outXmat);
 
+    [LibraryImport(Dll, EntryPoint = "Engine_InitGpuTrainer")]
+    public static partial AistankResult EngineInitGpuTrainer(IntPtr engine);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_InitPolicyWeights")]
+    public static partial AistankResult EngineInitPolicyWeights(IntPtr engine, float* @params, ulong count);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_TrainStepGpu")]
+    public static partial AistankResult EngineTrainStepGpu(IntPtr engine, uint epochs, out float meanReward);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_DownloadWeights")]
+    public static partial AistankResult EngineDownloadWeights(IntPtr engine, float* @out, ulong count);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_RunGradientOnly")]
+    public static partial AistankResult EngineRunGradientOnly(IntPtr engine);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_DownloadGrad")]
+    public static partial AistankResult EngineDownloadGrad(IntPtr engine, float* @out, ulong count);
+
     [LibraryImport(Dll, EntryPoint = "Engine_GetObservationDim")]
     public static partial uint EngineGetObservationDim(IntPtr engine);
 

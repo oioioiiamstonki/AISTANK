@@ -104,6 +104,21 @@ AISTANK_API AistankResult Engine_GetGeomStatic(const AistankEngine* e,
 AISTANK_API AistankResult Engine_GetAgentGeomPose(const AistankEngine* e, uint32_t agent,
                                                   float* out_xpos, float* out_xmat);
 
+// ---- GPU-resident PPO trainer ----------------------------------------------
+// Moves the learning update onto the GPU: GAE, MLP forward/backward, gradient
+// reduction, and Adam all run as compute shaders on the rollout buffers that
+// stay resident in VRAM — no per-update rollout readback. Optional: the CLI
+// sample still uses the CPU trainer; the editor uses this.
+AISTANK_API AistankResult Engine_InitGpuTrainer(AistankEngine* e);
+AISTANK_API AistankResult Engine_InitPolicyWeights(AistankEngine* e,
+                                                   const float* params, uint64_t count);
+AISTANK_API AistankResult Engine_TrainStepGpu(AistankEngine* e, uint32_t epochs,
+                                              float* out_mean_reward);
+AISTANK_API AistankResult Engine_DownloadWeights(AistankEngine* e, float* out, uint64_t count);
+// Gradient-parity self-test hooks.
+AISTANK_API AistankResult Engine_RunGradientOnly(AistankEngine* e);
+AISTANK_API AistankResult Engine_DownloadGrad(AistankEngine* e, float* out, uint64_t count);
+
 // ---- Introspection ----------------------------------------------------------
 AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e);
 AISTANK_API uint32_t Engine_GetActionDim(const AistankEngine* e);

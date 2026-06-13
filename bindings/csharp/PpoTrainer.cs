@@ -166,6 +166,57 @@ public sealed class PpoTrainer
             MeanEpisodeLength: doneCount > 0 ? (float)S / doneCount : T);
     }
 
+    /// <summary>
+    /// Full-batch summed gradient for the current weights and rollout, with no
+    /// optimizer step or minibatching. Used as the oracle for the GPU gradient
+    /// parity self-test — the GPU's Grad buffer should match this element-wise.
+    /// </summary>
+    public float[] ComputeFullBatchGradient(RolloutView rollout)
+    {
+        int T = rollout.Horizon, N = rollout.NumAgents, O = rollout.ObsDim, A = rollout.ActDim;
+        int S = T * N, trainS = (T - 1) * N;
+        var obs = new float[S * O]; var act = new float[S * A];
+        var rew = new float[S]; var val = new float[S]; var done = new float[S];
+        var srcDone = MemoryMarshal.Cast<byte, float>(rollout.Dones);
+        for (int t = 0; t < T; t++)
+            for (int n = 0; n < N; n++)
+            {
+                int s = t * N + n;
+                for (int o = 0; o < O; o++) obs[s * O + o] = rollout.Observations[(t * O + o) * N + n];
+                for (int a = 0; a < A; a++) act[s * A + a] = rollout.Actions[(t * A + a) * N + n];
+                rew[s] = rollout.Rewards[t * N + n];
+                val[s] = rollout.Values[t * N + n];
+                done[s] = srcDone[t * N + n];
+            }
+
+        var oldLogp = new float[S]; var sc = new Scratch(_obsDim, _actDim);
+        for (int s = 0; s < trainS; s++) { Forward(obs, s, sc); oldLogp[s] = LogProb(act, s, sc.Mu); }
+
+        var adv = new float[S]; var vTarget = new float[S];
+        for (int n = 0; n < N; n++)
+        {
+            float gae = 0f;
+            for (int t = T - 2; t >= 0; t--)
+            {
+                int s = t * N + n, s1 = (t + 1) * N + n;
+                float notDone = 1f - done[s1];
+                float delta = rew[s1] + Gamma * val[s1] * notDone - val[s];
+                gae = delta + Gamma * Lambda * notDone * gae;
+                adv[s] = gae; vTarget[s] = gae + val[s];
+            }
+        }
+        float mean = 0, sq = 0;
+        for (int s = 0; s < trainS; s++) mean += adv[s];
+        mean /= trainS;
+        for (int s = 0; s < trainS; s++) sq += adv[s] * adv[s];
+        float std = MathF.Sqrt(MathF.Max(sq / trainS - mean * mean, 0f)) + 1e-8f;
+        for (int s = 0; s < trainS; s++) adv[s] = (adv[s] - mean) / std;
+
+        var g = new float[_w.Length];
+        for (int s = 0; s < trainS; s++) BackwardSample(obs, act, adv, vTarget, oldLogp, s, g, sc);
+        return g;
+    }
+
     // ------------------------------------------------------------- minibatch step
 
     private void TrainMinibatch(float[] obs, float[] act, float[] adv, float[] vTarget,

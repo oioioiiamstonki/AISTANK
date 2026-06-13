@@ -102,10 +102,26 @@ This is no longer a paper scaffold. The native engine **builds and runs end-to-e
 - **Real GPU compute** — observation gathering, the MLP policy forward pass, reward, and
   termination all run as DirectX 12 / DirectCompute dispatches (measured ~0.16 ms/tick on the
   test GPU via timestamp queries).
-- **Real PPO** — full clipped-surrogate update with GAE(λ), advantage normalization, an Adam
-  optimizer, and analytic backprop through the actor-critic MLP, all in
-  [`PpoTrainer.cs`](bindings/csharp/PpoTrainer.cs). Rollouts are read back once per 32-tick
-  horizon; the optimizer pushes fresh weights into the GPU's double-buffered weight slot.
+- **Real PPO, on the GPU** — the entire learning update (GAE(λ), advantage normalization, the
+  MLP forward/backward pass, gradient reduction via a tiled GEMM, and Adam) runs as HLSL compute
+  shaders in [`TrainShaders.hlsl`](shaders/TrainShaders.hlsl), orchestrated by
+  [`GpuTrainer`](src/GpuTrainer.cpp), operating on the rollout buffers that **never leave VRAM**.
+  The CPU [`PpoTrainer.cs`](bindings/csharp/PpoTrainer.cs) is kept as a reference implementation
+  and as the oracle for a gradient-parity self-test (`TrainWalking --parity`): the GPU gradient
+  matches it to a relative L2 error of ~6e-6 (cosine 1.0000). Moving the update onto the GPU made
+  training ~4× faster end-to-end (CPU `Parallel.For` backprop was ~85% of iteration time);
+  MuJoCo physics stepping is now the co-bottleneck.
+
+### What runs where
+
+| Stage | Device |
+|---|---|
+| MuJoCo physics (`mj_step`) | CPU (worker pool) — MuJoCo's C API is CPU-native |
+| Observation gather, policy inference, reward, termination | **GPU** (DirectCompute) |
+| PPO update: GAE, forward/backward, gradient reduction, Adam | **GPU** (DirectCompute) |
+
+The only thing left on the CPU is the physics engine itself. Making *that* GPU-resident would
+mean swapping MuJoCo's C API for a GPU physics backend (MJX / NVIDIA Warp) — a separate effort.
 
 Verified on Windows 11 + an AMD/NVIDIA DX12 GPU: `dotnet run --project samples/TrainWalking`
 prints live reward / steps-per-second, and **Robot School** renders agent 0's actual MuJoCo

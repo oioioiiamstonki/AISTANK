@@ -2,15 +2,18 @@
 #include "../include/aistank.h"
 #include "EngineCore.h"
 #include "SimulationLoop.h"
+#include "GpuTrainer.h"
 
 #include <memory>
 #include <string>
 
 // Opaque handle: owns core + loop. Loop declared after core so it is destroyed
-// first (it references core's queues during teardown).
+// first (it references core's queues during teardown). The GPU trainer is
+// created on demand (CLI uses the CPU trainer; the editor uses the GPU one).
 struct AistankEngine {
     std::unique_ptr<aistank::EngineCore>     core;
     std::unique_ptr<aistank::SimulationLoop> loop;
+    std::unique_ptr<aistank::GpuTrainer>     trainer;
     std::string lastError;
 };
 
@@ -130,6 +133,57 @@ AISTANK_API AistankResult Engine_GetAgentGeomPose(const AistankEngine* e, uint32
         for (int i = 0; i < 9; ++i) out_xmat[g * 9 + i] = static_cast<float>(d->geom_xmat[g * 9 + i]);
     }
     return AISTANK_OK;
+}
+
+// ---- GPU-resident PPO trainer ---------------------------------------------
+
+AISTANK_API AistankResult Engine_InitGpuTrainer(AistankEngine* e) {
+    if (!e) return AISTANK_ERR_BAD_ARG;
+    try {
+        if (!e->trainer)
+            e->trainer = std::make_unique<aistank::GpuTrainer>(*e->core);
+        return AISTANK_OK;
+    } catch (const std::exception& ex) {
+        e->lastError = ex.what();
+        return AISTANK_ERR_DEVICE;
+    }
+}
+
+AISTANK_API AistankResult Engine_InitPolicyWeights(AistankEngine* e,
+                                                   const float* params, uint64_t count) {
+    if (!e || !params) return AISTANK_ERR_BAD_ARG;
+    if (!e->trainer || count != e->core->PolicyParamCount()) return AISTANK_ERR_BAD_ARG;
+    try { e->trainer->InitWeights(params, count); return AISTANK_OK; }
+    catch (const std::exception& ex) { e->lastError = ex.what(); return AISTANK_ERR_DEVICE; }
+}
+
+AISTANK_API AistankResult Engine_TrainStepGpu(AistankEngine* e, uint32_t epochs,
+                                              float* out_mean_reward) {
+    if (!e || !e->trainer) return AISTANK_ERR_BAD_ARG;
+    try {
+        float r = e->trainer->TrainStep(epochs ? epochs : 3);
+        if (out_mean_reward) *out_mean_reward = r;
+        return AISTANK_OK;
+    } catch (const std::exception& ex) { e->lastError = ex.what(); return AISTANK_ERR_DEVICE; }
+}
+
+AISTANK_API AistankResult Engine_DownloadWeights(AistankEngine* e, float* out, uint64_t count) {
+    if (!e || !e->trainer || !out) return AISTANK_ERR_BAD_ARG;
+    try { e->trainer->DownloadWeights(out, count); return AISTANK_OK; }
+    catch (const std::exception& ex) { e->lastError = ex.what(); return AISTANK_ERR_DEVICE; }
+}
+
+// Parity self-test: run one forward/backward and expose the summed gradient.
+AISTANK_API AistankResult Engine_RunGradientOnly(AistankEngine* e) {
+    if (!e || !e->trainer) return AISTANK_ERR_BAD_ARG;
+    try { e->trainer->RunGradientOnly(); return AISTANK_OK; }
+    catch (const std::exception& ex) { e->lastError = ex.what(); return AISTANK_ERR_DEVICE; }
+}
+
+AISTANK_API AistankResult Engine_DownloadGrad(AistankEngine* e, float* out, uint64_t count) {
+    if (!e || !e->trainer || !out) return AISTANK_ERR_BAD_ARG;
+    try { e->trainer->DownloadGrad(out, count); return AISTANK_OK; }
+    catch (const std::exception& ex) { e->lastError = ex.what(); return AISTANK_ERR_DEVICE; }
 }
 
 AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e) {

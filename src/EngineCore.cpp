@@ -86,8 +86,10 @@ void SimBuffers::Create(ID3D12Device* dev, uint32_t numAgents, uint32_t dof,
     rolloutDone.Create(dev, uint64_t(horizon) * N, 4, kUavState, true);
     rolloutVal .Create(dev, uint64_t(horizon) * N, 4, kUavState, true);
 
-    weights[0].Create(dev, policyParamCount, 4, kSrvState, false);
-    weights[1].Create(dev, policyParamCount, 4, kSrvState, false);
+    // UAV-capable: the GPU trainer writes weights[0] in place during the PPO
+    // update; inference reads them as an SRV between updates (state toggles).
+    weights[0].Create(dev, policyParamCount, 4, kSrvState, true);
+    weights[1].Create(dev, policyParamCount, 4, kSrvState, true);
 
     instanceXforms.Create(dev, 64ull * 16 /*float4x4, first 64 agents*/, 4, kUavState, true);
 

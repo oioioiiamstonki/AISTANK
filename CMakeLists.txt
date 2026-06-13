@@ -20,6 +20,7 @@ set_target_properties(mujoco PROPERTIES
 add_library(aistank SHARED
     src/EngineCore.cpp
     src/SimulationLoop.cpp
+    src/GpuTrainer.cpp
     src/AistankApi.cpp)
 
 target_include_directories(aistank PUBLIC include)
@@ -33,28 +34,37 @@ if(NOT DXC_EXE)
     message(FATAL_ERROR "dxc.exe not found — install the Windows SDK or DXC release")
 endif()
 
-set(SHADER_SRC ${CMAKE_SOURCE_DIR}/shaders/AgentShaders.hlsl)
 set(SHADER_OUT_DIR ${CMAKE_BINARY_DIR}/$<CONFIG>/shaders)
-set(SHADER_ENTRIES
+set(AGENT_SRC ${CMAKE_SOURCE_DIR}/shaders/AgentShaders.hlsl)
+set(TRAIN_SRC ${CMAKE_SOURCE_DIR}/shaders/TrainShaders.hlsl)
+set(AGENT_ENTRIES
     CS_GatherObservations
     CS_PolicyForward
     CS_RewardAndTerminate
     CS_ApplyResets
     CS_BuildInstances)
+set(TRAIN_ENTRIES
+    CS_GAE CS_AdvNorm CS_TrainForward CS_TrainBackward
+    CS_WeightGrad CS_BiasGrad CS_Adam CS_ZeroStats)
 
 set(SHADER_BLOBS "")
-foreach(ENTRY ${SHADER_ENTRIES})
-    set(BLOB ${SHADER_OUT_DIR}/${ENTRY}.cso)
-    add_custom_command(
-        OUTPUT ${BLOB}
-        COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_OUT_DIR}
-        COMMAND ${DXC_EXE} -T cs_6_0 -E ${ENTRY} -O3
-                $<$<CONFIG:Debug>:-Zi> $<$<CONFIG:Debug>:-Qembed_debug>
-                -Fo ${BLOB} ${SHADER_SRC}
-        DEPENDS ${SHADER_SRC}
-        COMMENT "DXC ${ENTRY}")
-    list(APPEND SHADER_BLOBS ${BLOB})
-endforeach()
+function(compile_shaders SRC)
+    foreach(ENTRY ${ARGN})
+        set(BLOB ${SHADER_OUT_DIR}/${ENTRY}.cso)
+        add_custom_command(
+            OUTPUT ${BLOB}
+            COMMAND ${CMAKE_COMMAND} -E make_directory ${SHADER_OUT_DIR}
+            COMMAND ${DXC_EXE} -T cs_6_0 -E ${ENTRY} -O3
+                    $<$<CONFIG:Debug>:-Zi> $<$<CONFIG:Debug>:-Qembed_debug>
+                    -Fo ${BLOB} ${SRC}
+            DEPENDS ${SRC}
+            COMMENT "DXC ${ENTRY}")
+        list(APPEND SHADER_BLOBS ${BLOB})
+    endforeach()
+    set(SHADER_BLOBS ${SHADER_BLOBS} PARENT_SCOPE)
+endfunction()
+compile_shaders(${AGENT_SRC} ${AGENT_ENTRIES})
+compile_shaders(${TRAIN_SRC} ${TRAIN_ENTRIES})
 
 add_custom_target(shaders ALL DEPENDS ${SHADER_BLOBS})
 add_dependencies(aistank shaders)

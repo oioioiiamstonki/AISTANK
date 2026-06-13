@@ -89,7 +89,6 @@ public sealed class DemoBackend : IRobotBackend
 public sealed class NativeBackend : IRobotBackend
 {
     private readonly HumanoidEnvironment _env;
-    private readonly PpoTrainer _trainer;
     private Thread? _worker;
     private volatile RobotMode _mode = RobotMode.Idle;
     private volatile bool _running;
@@ -116,8 +115,11 @@ public sealed class NativeBackend : IRobotBackend
             NumAgents = 1024,
             RolloutHorizon = 32,
         });
-        _trainer = new PpoTrainer(_env.ObservationDim, _env.ActionDim, _env.PolicyParamCount);
-        _env.SetPolicyWeights(_trainer.CurrentWeights);
+        // GPU-resident PPO: the learning update runs entirely on the GPU. We use
+        // the CPU trainer once, only to generate the initial random weights.
+        _env.InitGpuTrainer();
+        var init = new PpoTrainer(_env.ObservationDim, _env.ActionDim, _env.PolicyParamCount);
+        _env.InitPolicyWeights(init.CurrentWeights);
         _bodyParents = _env.GetBodyParents();
         _poseBuffer = new float[_env.BodyCount * 3];
 
@@ -161,24 +163,11 @@ public sealed class NativeBackend : IRobotBackend
             }
             if (!_running) break;
 
-            var rollout = _env.MapRollout();
-            float meanReward;
+            // The PPO update runs entirely on the GPU over the rollout buffers
+            // that never left VRAM. Only while training do we apply it.
             if (_mode == RobotMode.Training)
             {
-                var update = _trainer.Update(rollout);
-                _env.SetPolicyWeights(_trainer.CurrentWeights);
-                meanReward = update.MeanReward;
-            }
-            else
-            {
-                float sum = 0;
-                foreach (float r in rollout.Rewards) sum += r;
-                meanReward = sum / rollout.Rewards.Length;
-            }
-
-            // Map reward into a 0..1 "skill" the UI can show as stars (training only).
-            if (_mode == RobotMode.Training)
-            {
+                float meanReward = _env.TrainStepGpu(epochs: 3);
                 _rewardMin = Math.Min(_rewardMin, meanReward);
                 _rewardMax = Math.Max(_rewardMax, meanReward);
                 float span = Math.Max(_rewardMax - _rewardMin, 1e-3f);

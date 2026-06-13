@@ -7,8 +7,41 @@ using System.Diagnostics;
 using Aistank;
 using Aistank.Training;
 
+// `dotnet run -- --parity` verifies the GPU gradient matches the CPU oracle.
+if (args.Length > 0 && args[0] == "--parity") { Parity.Run(); return; }
+
+bool gpu = Array.IndexOf(args, "--gpu") >= 0;   // GPU-resident PPO update
+
 const int ticksPerIteration = 32;   // must equal RolloutHorizon
 const int iterations = 2000;
+
+if (gpu)
+{
+    using var genv = new HumanoidEnvironment(new EnvironmentOptions
+    {
+        MjcfPath = "assets/humanoid16.xml",
+        NumAgents = 4096,
+        RolloutHorizon = ticksPerIteration,
+    });
+    genv.InitGpuTrainer();
+    var gi = new PpoTrainer(genv.ObservationDim, genv.ActionDim, genv.PolicyParamCount);
+    genv.InitPolicyWeights(gi.CurrentWeights);
+    Console.WriteLine($"AISTANK [GPU PPO] | agents={genv.NumAgents} obs={genv.ObservationDim} " +
+                      $"act={genv.ActionDim} params={genv.PolicyParamCount}");
+
+    var gsw = Stopwatch.StartNew();
+    for (int iter = 0; iter < iterations; iter++)
+    {
+        for (int t = 0; t < ticksPerIteration; t++) genv.Tick();
+        float r = genv.TrainStepGpu(epochs: 3);
+        if (iter % 10 == 0)
+        {
+            double sps = (double)genv.NumAgents * ticksPerIteration * (iter + 1) / gsw.Elapsed.TotalSeconds;
+            Console.WriteLine($"iter {iter,5} | R̄ {r,8:F3} | {sps / 1e6,6:F2}M steps/s");
+        }
+    }
+    return;
+}
 
 using var env = new HumanoidEnvironment(new EnvironmentOptions
 {
