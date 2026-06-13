@@ -10,11 +10,24 @@
     <AistankNativeDir>..\..\build\Release</AistankNativeDir>
   </PropertyGroup>
 
+  <!-- The native engine loads mujoco.dll and reads shaders/*.cso from disk
+       relative to aistank.dll. ExcludeFromSingleFile keeps the two DLLs loose
+       next to the exe in single-file publishes, so the engine can find its
+       shaders (otherwise it self-extracts to temp and falls back to demo mode). -->
   <ItemGroup Condition="Exists('$(AistankNativeDir)\aistank.dll')">
-    <None Include="$(AistankNativeDir)\aistank.dll" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="$(AistankNativeDir)\mujoco.dll" CopyToOutputDirectory="PreserveNewest"
-          Condition="Exists('$(AistankNativeDir)\mujoco.dll')" />
-    <None Include="$(AistankNativeDir)\shaders\*.cso" LinkBase="shaders"
-          CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(AistankNativeDir)\aistank.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+    <None Include="$(AistankNativeDir)\mujoco.dll" Condition="Exists('$(AistankNativeDir)\mujoco.dll')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </None>
+    <None Include="$(AistankNativeDir)\shaders\*.cso" LinkBase="shaders">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 </Project>
