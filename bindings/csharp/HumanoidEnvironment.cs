@@ -114,6 +114,34 @@ public sealed class HumanoidEnvironment : IDisposable
             return Native.EngineGetAgentBodyPositions(_handle, agent, p) == AistankResult.Ok;
     }
 
+    /// <summary>Number of collision geoms in the model (includes the ground plane).</summary>
+    public uint GeomCount => Native.EngineGetGeomCount(_handle);
+
+    /// <summary>Static geom description: MuJoCo type enum + size[3] per geom.</summary>
+    public unsafe (int[] Types, float[] Sizes) GetGeomStatic()
+    {
+        ThrowIfDisposed();
+        int g = (int)GeomCount;
+        var types = new int[g];
+        var sizes = new float[g * 3];
+        fixed (int* t = types) fixed (float* s = sizes)
+            Native.EngineGetGeomStatic(_handle, t, s);
+        return (types, sizes);
+    }
+
+    /// <summary>
+    /// One agent's per-geom world transforms this frame: positions (geom*3) and
+    /// row-major 3x3 rotations (geom*9), read straight from mjData. Concurrent
+    /// reads with a physics step may tear, glitching at most one frame.
+    /// </summary>
+    public unsafe bool TryGetAgentGeomPose(uint agent, float[] xpos, float[] xmat)
+    {
+        if (_handle == IntPtr.Zero || xpos.Length < GeomCount * 3 || xmat.Length < GeomCount * 9)
+            return false;
+        fixed (float* p = xpos) fixed (float* mtx = xmat)
+            return Native.EngineGetAgentGeomPose(_handle, agent, p, mtx) == AistankResult.Ok;
+    }
+
     private unsafe string LastError()
         => System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
                Native.EngineGetLastError(_handle)) ?? "";

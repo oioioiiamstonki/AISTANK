@@ -13,11 +13,17 @@ checkpoints/
 runs/
 # Downloaded MuJoCo SDK (users fetch their own — see README)
 third_party/
-# Test run logs
+# Test run logs and capture artifacts
 run_stdout.txt
 run_stderr.txt
 **/run_stdout.txt
 **/run_stderr.txt
+capture.ps1
+shot_*.png
 # Published self-contained exe (154 MB — over GitHub's 100 MB limit; shipped via Releases)
 /RobotSchool.exe
 RobotSchool-win-x64.zip
+# Native build artifacts staged next to the root exe for local runs
+/aistank.dll
+/mujoco.dll
+/shaders/*.cso

@@ -27,7 +27,16 @@ public interface IRobotBackend : IDisposable
     /// <summary>Real MuJoCo pose of one agent: body world positions + parent indices.
     /// Returns false when no physics is available (demo mode).</summary>
     bool TryGetPose(out float[] bodyXyz, out int[] parents);
+
+    /// <summary>Static geom description (null in demo mode).</summary>
+    GeomModel? Geoms { get; }
+
+    /// <summary>Fill agent 0's per-geom world transforms this frame. False in demo mode.</summary>
+    bool TryGetGeomPose(float[] xpos, float[] xmat);
 }
+
+/// <summary>Collision-geom shapes of the humanoid, constant for the run.</summary>
+public sealed record GeomModel(int Count, int[] Types, float[] Sizes);
 
 // ---------------------------------------------------------------- DemoBackend
 
@@ -64,6 +73,9 @@ public sealed class DemoBackend : IRobotBackend
         bodyXyz = []; parents = [];
         return false;
     }
+
+    public GeomModel? Geoms => null;
+    public bool TryGetGeomPose(float[] xpos, float[] xmat) => false;
 
     public void Dispose() { }
 }
@@ -108,6 +120,16 @@ public sealed class NativeBackend : IRobotBackend
         _env.SetPolicyWeights(_trainer.CurrentWeights);
         _bodyParents = _env.GetBodyParents();
         _poseBuffer = new float[_env.BodyCount * 3];
+
+        var (types, sizes) = _env.GetGeomStatic();
+        Geoms = new GeomModel((int)_env.GeomCount, types, sizes);
+
+        // Physics runs continuously from launch so the viewport is always live —
+        // gravity visibly pulls the untrained robot down the moment you open the
+        // app. The mode flag only switches whether PPO learning is applied.
+        _running = true;
+        _worker = new Thread(Loop) { IsBackground = true, Name = "aistank-loop" };
+        _worker.Start();
     }
 
     public bool TryGetPose(out float[] bodyXyz, out int[] parents)
@@ -117,30 +139,19 @@ public sealed class NativeBackend : IRobotBackend
         return _env.TryGetAgentBodyPositions(0, _poseBuffer);
     }
 
-    public void StartTraining() => StartLoop(RobotMode.Training);
-    public void StartPlaying()  => StartLoop(RobotMode.Playing);
+    public GeomModel? Geoms { get; }
+    public bool TryGetGeomPose(float[] xpos, float[] xmat)
+        => _env.TryGetAgentGeomPose(0, xpos, xmat);
 
-    private void StartLoop(RobotMode mode)
-    {
-        Stop();
-        _mode = mode;
-        _running = true;
-        _worker = new Thread(Loop) { IsBackground = true, Name = "aistank-loop" };
-        _worker.Start();
-    }
-
-    public void Stop()
-    {
-        _running = false;
-        _worker?.Join();
-        _worker = null;
-        _mode = RobotMode.Idle;
-    }
+    // TRAIN/PLAY just flip the mode flag; the physics loop never stops, so the
+    // robot keeps being simulated live in every mode.
+    public void StartTraining() => _mode = RobotMode.Training;
+    public void StartPlaying()  => _mode = RobotMode.Playing;
+    public void Stop()          => _mode = RobotMode.Idle;
 
     private void Loop()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
-        long stepsAtStart = _totalSteps;
         while (_running)
         {
             for (int t = 0; t < 32 && _running; t++)
@@ -165,13 +176,15 @@ public sealed class NativeBackend : IRobotBackend
                 meanReward = sum / rollout.Rewards.Length;
             }
 
-            // Map reward into a 0..1 "skill" the UI can show as stars.
-            _rewardMin = Math.Min(_rewardMin, meanReward);
-            _rewardMax = Math.Max(_rewardMax, meanReward);
-            float span = Math.Max(_rewardMax - _rewardMin, 1e-3f);
-            _skill = Math.Clamp((meanReward - _rewardMin) / span, 0f, 1f);
-
-            _stepsPerSec = (_totalSteps - stepsAtStart) / sw.Elapsed.TotalSeconds;
+            // Map reward into a 0..1 "skill" the UI can show as stars (training only).
+            if (_mode == RobotMode.Training)
+            {
+                _rewardMin = Math.Min(_rewardMin, meanReward);
+                _rewardMax = Math.Max(_rewardMax, meanReward);
+                float span = Math.Max(_rewardMax - _rewardMin, 1e-3f);
+                _skill = Math.Clamp((meanReward - _rewardMin) / span, 0f, 1f);
+            }
+            _stepsPerSec = _totalSteps / sw.Elapsed.TotalSeconds;
         }
     }
 
@@ -180,7 +193,9 @@ public sealed class NativeBackend : IRobotBackend
 
     public void Dispose()
     {
-        Stop();
+        _running = false;
+        _worker?.Join();
+        _worker = null;
         _env.Dispose();
     }
 }

@@ -74,6 +74,15 @@ public static unsafe partial class Native
     [LibraryImport(Dll, EntryPoint = "Engine_GetAgentBodyPositions")]
     public static partial AistankResult EngineGetAgentBodyPositions(IntPtr engine, uint agent, float* outXyz);
 
+    [LibraryImport(Dll, EntryPoint = "Engine_GetGeomCount")]
+    public static partial uint EngineGetGeomCount(IntPtr engine);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_GetGeomStatic")]
+    public static partial AistankResult EngineGetGeomStatic(IntPtr engine, int* outTypes, float* outSizes);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_GetAgentGeomPose")]
+    public static partial AistankResult EngineGetAgentGeomPose(IntPtr engine, uint agent, float* outXpos, float* outXmat);
+
     [LibraryImport(Dll, EntryPoint = "Engine_GetObservationDim")]
     public static partial uint EngineGetObservationDim(IntPtr engine);
 

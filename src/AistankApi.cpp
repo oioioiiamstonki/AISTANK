@@ -97,6 +97,41 @@ AISTANK_API AistankResult Engine_GetAgentBodyPositions(const AistankEngine* e,
     return AISTANK_OK;
 }
 
+AISTANK_API uint32_t Engine_GetGeomCount(const AistankEngine* e) {
+    return e ? static_cast<uint32_t>(e->core->Model()->ngeom) : 0;
+}
+
+// Static per-geom description (constant for the run): MuJoCo geom type enum and
+// size[3]. type: 0=plane 1=hfield 2=sphere 3=capsule 4=ellipsoid 5=cylinder 6=box.
+AISTANK_API AistankResult Engine_GetGeomStatic(const AistankEngine* e,
+                                               int32_t* out_types, float* out_sizes) {
+    if (!e || !out_types || !out_sizes) return AISTANK_ERR_BAD_ARG;
+    const mjModel* m = e->core->Model();
+    for (int g = 0; g < m->ngeom; ++g) {
+        out_types[g] = m->geom_type[g];
+        out_sizes[g * 3 + 0] = static_cast<float>(m->geom_size[g * 3 + 0]);
+        out_sizes[g * 3 + 1] = static_cast<float>(m->geom_size[g * 3 + 1]);
+        out_sizes[g * 3 + 2] = static_cast<float>(m->geom_size[g * 3 + 2]);
+    }
+    return AISTANK_OK;
+}
+
+// One agent's per-geom world transform this frame: position xyz (ngeom*3) and
+// row-major 3x3 orientation matrix (ngeom*9), straight from mjData.
+AISTANK_API AistankResult Engine_GetAgentGeomPose(const AistankEngine* e, uint32_t agent,
+                                                  float* out_xpos, float* out_xmat) {
+    if (!e || !out_xpos || !out_xmat) return AISTANK_ERR_BAD_ARG;
+    auto& envs = const_cast<AistankEngine*>(e)->core->Envs();
+    if (agent >= envs.size()) return AISTANK_ERR_BAD_ARG;
+    const mjModel* m = e->core->Model();
+    const mjData* d = envs[agent].data;
+    for (int g = 0; g < m->ngeom; ++g) {
+        for (int i = 0; i < 3; ++i) out_xpos[g * 3 + i] = static_cast<float>(d->geom_xpos[g * 3 + i]);
+        for (int i = 0; i < 9; ++i) out_xmat[g * 9 + i] = static_cast<float>(d->geom_xmat[g * 9 + i]);
+    }
+    return AISTANK_OK;
+}
+
 AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e) {
     return e ? e->core->ObsDim() : 0;
 }

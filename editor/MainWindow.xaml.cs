@@ -127,7 +127,9 @@ public partial class MainWindow : Window
         }
     }
 
-    // ----------------------------------------------------------- Cartoon robot
+    // ----------------------------------------------------------- Scene dispatch
+
+    private float[]? _geomXpos, _geomXmat;
 
     private void DrawScene(RobotStatus status, double dt)
     {
@@ -135,11 +137,18 @@ public partial class MainWindow : Window
         double w = Stage.ActualWidth, h = Stage.ActualHeight;
         if (w < 50 || h < 50) return;
 
-        // Real engine available → draw the actual MuJoCo rigid-body pose.
-        if (_backend.TryGetPose(out float[] xyz, out int[] parents))
+        // Real engine → draw agent 0's actual MuJoCo collision geometry, with
+        // full 3D orientation, so it visibly articulates and topples like a body.
+        if (_backend.Geoms is { } geoms)
         {
-            DrawRealRobot(xyz, parents, w, h);
-            return;
+            int n = geoms.Count;
+            _geomXpos ??= new float[n * 3];
+            _geomXmat ??= new float[n * 9];
+            if (_backend.TryGetGeomPose(_geomXpos, _geomXmat))
+            {
+                DrawPhysicsRobot(geoms, _geomXpos, _geomXmat, w, h);
+                return;
+            }
         }
 
         double groundY = h * 0.78;
@@ -168,48 +177,154 @@ public partial class MainWindow : Window
         if (_fallTimer > 0.9) SpeechBubble.Text = "Oops! 💥";
     }
 
-    // Side-on orthographic view of agent 0's real physics state: world +x (walk
-    // direction) maps to screen x with the camera tracking the torso, world +z
-    // (up) maps to screen y. Bones connect each body to its parent.
-    private void DrawRealRobot(float[] xyz, int[] parents, double w, double h)
+    // MuJoCo geom type enums we render.
+    private const int GeomPlane = 0, GeomSphere = 2, GeomCapsule = 3, GeomCylinder = 5, GeomBox = 6;
+
+    // Camera: side view down world -Y, with a gentle oblique tilt so lateral
+    // offset (left/right legs, depth) reads as 3D. World x = forward → screen x
+    // (camera tracks the robot), world z = up → screen y. The same real MuJoCo
+    // xpos/xmat that drive the physics drive every shape here — nothing is faked.
+    private void DrawPhysicsRobot(GeomModel geoms, float[] xpos, float[] xmat, double w, double h)
     {
-        const double scale = 200;                 // pixels per meter
-        double groundY = h * 0.82;
-        int nbody = parents.Length;
-        if (nbody < 2 || xyz.Length < nbody * 3) return;
+        const double scale = 230;                 // pixels per metre
+        double groundY = h * 0.80;
+        int n = geoms.Count;
 
-        double rootX = xyz[1 * 3 + 0];            // body 1 = torso
-        double camX = w * 0.45;
+        // 3/4 camera: yaw 32° around the vertical axis so left/right limbs spread
+        // apart and the robot reads as a 3D character instead of an edge-on stack.
+        // fx (screen horizontal) mixes forward+lateral; depth drives shading and a
+        // slight vertical parallax. Walking (+x) still moves the robot rightward.
+        const double yaw = 0.56;                  // ~32°
+        double cosY = Math.Cos(yaw), sinY = Math.Sin(yaw);
 
-        // Ground stripes scroll with the robot's real forward progress.
-        double scroll = ((rootX * scale) % 60 + 60) % 60;
-        for (double x = -scroll; x < w; x += 60)
-            Stage.Children.Add(MakeLine(x, groundY + 10, x + 30, groundY + 10,
-                                        Color.FromRgb(0x4e, 0x83, 0x3f), 4));
-        Stage.Children.Add(MakeLine(0, groundY, w, groundY,
-                                    Color.FromRgb(0x44, 0x70, 0x36), 2));
+        double Fx(double wx, double wy) => wx * cosY + wy * sinY;
+        double Depth(double wx, double wy) => -wx * sinY + wy * cosY;
 
-        var bone = Color.FromRgb(0xE8, 0xE8, 0xF0);
-        var joint = Color.FromRgb(0x55, 0x55, 0x70);
+        // Track the robot horizontally by the mean rotated-x of its dynamic geoms.
+        double cfx = 0; int dyn = 0;
+        for (int g = 0; g < n; g++)
+            if (geoms.Types[g] != GeomPlane) { cfx += Fx(xpos[g * 3 + 0], xpos[g * 3 + 1]); dyn++; }
+        if (dyn > 0) cfx /= dyn;
+        double camX = w * 0.42;
 
-        double Sx(int b) => camX + (xyz[b * 3 + 0] - rootX) * scale;
-        double Sy(int b) => groundY - xyz[b * 3 + 2] * scale;
+        (double X, double Y) Project(double wx, double wy, double wz) =>
+            (camX + (Fx(wx, wy) - cfx) * scale,
+             groundY - wz * scale + Depth(wx, wy) * 0.18 * scale);
 
-        for (int b = 1; b < nbody; b++)
+        // --- Sky already painted by the viewport gradient; draw ground + grid ---
+        Stage.Children.Add(new Rectangle
         {
-            int p = parents[b];
-            if (p > 0)
-                Stage.Children.Add(MakeLine(Sx(b), Sy(b), Sx(p), Sy(p), bone, 8));
-        }
-        for (int b = 1; b < nbody; b++)
+            Width = w, Height = Math.Max(0, h - groundY) + 4,
+            Fill = new SolidColorBrush(Color.FromRgb(0x5E, 0x9C, 0x4C)),
+        }.At(0, groundY));
+        double scroll = ((cfx * scale) % 64 + 64) % 64;
+        for (double x = -scroll; x < w; x += 64)
+            Stage.Children.Add(MakeLine(x, groundY, x + 22, groundY + 18,
+                                        Color.FromRgb(0x4c, 0x82, 0x3d), 3));
+        Stage.Children.Add(MakeLine(0, groundY, w, groundY, Color.FromRgb(0x3c, 0x66, 0x30), 3));
+
+        // --- Soft contact shadows: each geom projected straight down to z = 0 ---
+        for (int g = 0; g < n; g++)
         {
-            // Torso (body 1) gets a head-sized marker so the robot reads as a person.
-            double r = b == 1 ? 13 : 5;
-            var dot = new Ellipse { Width = r * 2, Height = r * 2, Fill = new SolidColorBrush(joint) };
-            Canvas.SetLeft(dot, Sx(b) - r);
-            Canvas.SetTop(dot, Sy(b) - r - (b == 1 ? 30 : 0));
-            Stage.Children.Add(dot);
+            if (geoms.Types[g] == GeomPlane) continue;
+            var (sx, _) = Project(xpos[g * 3 + 0], xpos[g * 3 + 1], 0);
+            double height = Math.Max(0.0, xpos[g * 3 + 2]);
+            double r = (14 + geoms.Sizes[g * 3] * scale) / (1 + height * 1.6);
+            Stage.Children.Add(new Ellipse
+            {
+                Width = r * 2.2, Height = r * 0.7,
+                Fill = new SolidColorBrush(Color.FromArgb((byte)(70 / (1 + height)), 0, 0, 0)),
+            }.At(sx - r * 1.1, groundY - r * 0.35));
         }
+
+        // --- Painter's algorithm: far drawn first (ascending depth) ---
+        var order = new int[n];
+        for (int i = 0; i < n; i++) order[i] = i;
+        Array.Sort(order, (a, b) =>
+            Depth(xpos[a * 3], xpos[a * 3 + 1]).CompareTo(Depth(xpos[b * 3], xpos[b * 3 + 1])));
+
+        foreach (int g in order)
+        {
+            int type = geoms.Types[g];
+            if (type == GeomPlane) continue;
+
+            // Depth shading: nearer = brighter, for a 3D feel.
+            double depth = Math.Clamp(0.7 + Depth(xpos[g * 3], xpos[g * 3 + 1]) * 0.6, 0.4, 1.0);
+            byte lit(byte c) => (byte)Math.Clamp(c * depth, 0, 255);
+            var fill = new SolidColorBrush(Color.FromRgb(lit(0xDD), lit(0xE2), lit(0xEC)));
+            var edge = new SolidColorBrush(Color.FromRgb(lit(0x6a), lit(0x70), lit(0x86)));
+
+            double px = xpos[g * 3 + 0], py = xpos[g * 3 + 1], pz = xpos[g * 3 + 2];
+            // Local axis columns of the row-major 3x3 rotation.
+            double zx = xmat[g * 9 + 2], zy = xmat[g * 9 + 5], zz = xmat[g * 9 + 8];
+
+            switch (type)
+            {
+                case GeomCapsule:
+                case GeomCylinder:
+                {
+                    double R = geoms.Sizes[g * 3 + 0], half = geoms.Sizes[g * 3 + 1];
+                    var (ax, ay) = Project(px + zx * half, py + zy * half, pz + zz * half);
+                    var (bx, by) = Project(px - zx * half, py - zy * half, pz - zz * half);
+                    var capsule = MakeLine(ax, ay, bx, by, default, R * 2 * scale);
+                    capsule.Stroke = fill;
+                    Stage.Children.Add(capsule);
+                    break;
+                }
+                case GeomBox:
+                {
+                    double sx = geoms.Sizes[g * 3], sy = geoms.Sizes[g * 3 + 1], sz = geoms.Sizes[g * 3 + 2];
+                    double xx = xmat[g * 9 + 0], xy = xmat[g * 9 + 3], xz = xmat[g * 9 + 6];
+                    double yx = xmat[g * 9 + 1], yy = xmat[g * 9 + 4], yz = xmat[g * 9 + 7];
+                    var pts = new System.Windows.Point[8];
+                    int c = 0;
+                    for (int dx = -1; dx <= 1; dx += 2)
+                    for (int dy = -1; dy <= 1; dy += 2)
+                    for (int dz = -1; dz <= 1; dz += 2)
+                    {
+                        double wx = px + dx * sx * xx + dy * sy * yx + dz * sz * zx;
+                        double wy = py + dx * sx * xy + dy * sy * yy + dz * sz * zy;
+                        double wz = pz + dx * sx * xz + dy * sy * yz + dz * sz * zz;
+                        var (X, Y) = Project(wx, wy, wz);
+                        pts[c++] = new System.Windows.Point(X, Y);
+                    }
+                    var poly = new Polygon { Fill = fill, Stroke = edge, StrokeThickness = 1.5 };
+                    foreach (var pt in ConvexHull(pts)) poly.Points.Add(pt);
+                    Stage.Children.Add(poly);
+                    break;
+                }
+                default: // sphere / ellipsoid
+                {
+                    double R = geoms.Sizes[g * 3 + 0] * scale;
+                    var (X, Y) = Project(px, py, pz);
+                    Stage.Children.Add(new Ellipse { Width = R * 2, Height = R * 2, Fill = fill }
+                        .At(X - R, Y - R));
+                    break;
+                }
+            }
+        }
+    }
+
+    // Andrew's monotone chain — silhouette of the 8 projected box corners.
+    private static System.Windows.Point[] ConvexHull(System.Windows.Point[] p)
+    {
+        var pts = (System.Windows.Point[])p.Clone();
+        Array.Sort(pts, (a, b) => a.X != b.X ? a.X.CompareTo(b.X) : a.Y.CompareTo(b.Y));
+        var hull = new System.Windows.Point[pts.Length * 2];
+        int k = 0;
+        double Cross(System.Windows.Point o, System.Windows.Point a, System.Windows.Point b)
+            => (a.X - o.X) * (b.Y - o.Y) - (a.Y - o.Y) * (b.X - o.X);
+        for (int i = 0; i < pts.Length; i++)
+        {
+            while (k >= 2 && Cross(hull[k - 2], hull[k - 1], pts[i]) <= 0) k--;
+            hull[k++] = pts[i];
+        }
+        for (int i = pts.Length - 2, t = k + 1; i >= 0; i--)
+        {
+            while (k >= t && Cross(hull[k - 2], hull[k - 1], pts[i]) <= 0) k--;
+            hull[k++] = pts[i];
+        }
+        return hull[..(k - 1)];
     }
 
     private void DrawRobot(double x, double groundY, float skill, bool fallen)
@@ -271,4 +386,15 @@ public partial class MainWindow : Window
             StrokeStartLineCap = PenLineCap.Round,
             StrokeEndLineCap = PenLineCap.Round,
         };
+}
+
+internal static class CanvasExtensions
+{
+    /// <summary>Position a shape on the Canvas and return it (fluent helper).</summary>
+    public static T At<T>(this T el, double left, double top) where T : UIElement
+    {
+        Canvas.SetLeft(el, left);
+        Canvas.SetTop(el, top);
+        return el;
+    }
 }

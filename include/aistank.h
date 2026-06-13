@@ -94,6 +94,16 @@ AISTANK_API AistankResult Engine_GetBodyParents(const AistankEngine* e, int32_t*
 AISTANK_API AistankResult Engine_GetAgentBodyPositions(const AistankEngine* e,
                                                        uint32_t agent, float* out_xyz);
 
+// Collision-geometry readout for a 3D-looking preview.
+AISTANK_API uint32_t      Engine_GetGeomCount(const AistankEngine* e);
+// out_types: ngeom ints (0=plane 2=sphere 3=capsule 5=cylinder 6=box ...),
+// out_sizes: ngeom*3 floats. Both constant for the run.
+AISTANK_API AistankResult Engine_GetGeomStatic(const AistankEngine* e,
+                                               int32_t* out_types, float* out_sizes);
+// out_xpos: ngeom*3 world positions; out_xmat: ngeom*9 row-major rotations.
+AISTANK_API AistankResult Engine_GetAgentGeomPose(const AistankEngine* e, uint32_t agent,
+                                                  float* out_xpos, float* out_xmat);
+
 // ---- Introspection ----------------------------------------------------------
 AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e);
 AISTANK_API uint32_t Engine_GetActionDim(const AistankEngine* e);
