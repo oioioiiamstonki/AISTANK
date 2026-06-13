@@ -114,9 +114,11 @@ public sealed class NativeBackend : IRobotBackend
         _env = new HumanoidEnvironment(new EnvironmentOptions
         {
             MjcfPath = mjcfPath,
-            // 1024 agents keeps the editor's tick + PPO update snappy; the
-            // headless CLI sample runs the full 4096-agent batch.
-            NumAgents = 1024,
+            // 64 agents: still a solid PPO batch (64x32 = 2048 samples/update) but
+            // light enough that real-time CPU MuJoCo physics costs ~1 core instead
+            // of pegging the machine. Only ~12 are shown; the headless CLI sample
+            // runs the full 4096-agent batch.
+            NumAgents = 64,
             RolloutHorizon = 32,
             // Lower fall threshold → agents get longer to stumble before a reset,
             // so the crowd is watchable instead of blinking back to standing.
@@ -160,12 +162,20 @@ public sealed class NativeBackend : IRobotBackend
     public void StartPlaying()  => _mode = RobotMode.Playing;
     public void Stop()          => _mode = RobotMode.Idle;
 
+    // Pace the simulation to the display rate when we're only watching, so the
+    // CPU-side MuJoCo physics doesn't peg every core just to show standing
+    // robots. Training runs unthrottled (it's gated by the GPU update anyway).
+    private const int IdleStepsPerSec = 30;   // matches the 30fps viewport; light on CPU
+    private const int BatchTicks = 32;
+
     private void Loop()
     {
         var sw = System.Diagnostics.Stopwatch.StartNew();
+        var batch = System.Diagnostics.Stopwatch.StartNew();
         while (_running)
         {
-            for (int t = 0; t < 32 && _running; t++)
+            batch.Restart();
+            for (int t = 0; t < BatchTicks && _running; t++)
             {
                 _env.Tick();
                 _totalSteps += _env.NumAgents;
@@ -181,6 +191,14 @@ public sealed class NativeBackend : IRobotBackend
                 _rewardMax = Math.Max(_rewardMax, meanReward);
                 float span = Math.Max(_rewardMax - _rewardMin, 1e-3f);
                 _skill = Math.Clamp((meanReward - _rewardMin) / span, 0f, 1f);
+            }
+            else
+            {
+                // Idle / Play: sleep so the batch runs at ~IdleStepsPerSec, not flat out.
+                double minMs = BatchTicks * 1000.0 / IdleStepsPerSec;
+                double elapsed = batch.Elapsed.TotalMilliseconds;
+                if (elapsed < minMs)
+                    Thread.Sleep((int)(minMs - elapsed));
             }
             _stepsPerSec = _totalSteps / sw.Elapsed.TotalSeconds;
         }

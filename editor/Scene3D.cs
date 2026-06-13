@@ -94,40 +94,38 @@ public sealed class Scene3D
     public void Update(IRobotBackend backend)
     {
         int cols = (int)Math.Ceiling(Math.Sqrt(_agents));
-        // Cache per-agent pose so we fetch once, not per part.
-        var poses = new (float[] xp, float[] xm, double ox, double oy)[_agents];
+        int idx = 0;
+        // Walk parts grouped by agent: fetch each agent's pose once into reusable
+        // scratch buffers (no per-frame allocation).
         for (int a = 0; a < _agents; a++)
         {
-            var xp = new float[_xpos.Length];
-            var xm = new float[_xmat.Length];
-            backend.TryGetAgentGeomPose(a, xp, xm);   // per-agent live pose
+            backend.TryGetAgentGeomPose(a, _xpos, _xmat);
             double ox = (a % cols - cols / 2.0) * _spacing;
             double oy = (a / cols - cols / 2.0) * _spacing;
-            poses[a] = (xp, xm, ox, oy);
-        }
 
-        foreach (var (a, g, kind, xf) in _parts)
-        {
-            var (xp, xm, ox, oy) = poses[a];
-            // Geom world rotation (MuJoCo row-major R) → WPF row-vector matrix = Rᵀ.
-            var R = new Matrix3D(
-                xm[g * 9 + 0], xm[g * 9 + 3], xm[g * 9 + 6], 0,
-                xm[g * 9 + 1], xm[g * 9 + 4], xm[g * 9 + 7], 0,
-                xm[g * 9 + 2], xm[g * 9 + 5], xm[g * 9 + 8], 0,
-                0, 0, 0, 1);
-            double px = xp[g * 3 + 0] + ox, py = xp[g * 3 + 1] + oy, pz = xp[g * 3 + 2];
-            double s0 = _geoms.Sizes[g * 3 + 0], s1 = _geoms.Sizes[g * 3 + 1], s2 = _geoms.Sizes[g * 3 + 2];
-
-            Matrix3D local;
-            switch (kind)
+            while (idx < _parts.Count && _parts[idx].agent == a)
             {
-                case 0: local = ScaleMat(s0, s0, s1); break;                 // capsule body
-                case 1: local = Mul(ScaleMat(s0, s0, s0), TransMat(0, 0, s1)); break;  // +z cap
-                case 2: local = Mul(ScaleMat(s0, s0, s0), TransMat(0, 0, -s1)); break; // -z cap
-                case 3: local = ScaleMat(s0, s1, s2); break;                 // box
-                default: local = ScaleMat(s0, s0, s0); break;                // sphere
+                var (_, g, kind, xf) = _parts[idx++];
+                // Geom world rotation (MuJoCo row-major R) → WPF row-vector matrix = transpose.
+                var R = new Matrix3D(
+                    _xmat[g * 9 + 0], _xmat[g * 9 + 3], _xmat[g * 9 + 6], 0,
+                    _xmat[g * 9 + 1], _xmat[g * 9 + 4], _xmat[g * 9 + 7], 0,
+                    _xmat[g * 9 + 2], _xmat[g * 9 + 5], _xmat[g * 9 + 8], 0,
+                    0, 0, 0, 1);
+                double px = _xpos[g * 3 + 0] + ox, py = _xpos[g * 3 + 1] + oy, pz = _xpos[g * 3 + 2];
+                double s0 = _geoms.Sizes[g * 3 + 0], s1 = _geoms.Sizes[g * 3 + 1], s2 = _geoms.Sizes[g * 3 + 2];
+
+                Matrix3D local;
+                switch (kind)
+                {
+                    case 0: local = ScaleMat(s0, s0, s1); break;                 // capsule body
+                    case 1: local = Mul(ScaleMat(s0, s0, s0), TransMat(0, 0, s1)); break;  // +z cap
+                    case 2: local = Mul(ScaleMat(s0, s0, s0), TransMat(0, 0, -s1)); break; // -z cap
+                    case 3: local = ScaleMat(s0, s1, s2); break;                 // box
+                    default: local = ScaleMat(s0, s0, s0); break;                // sphere
+                }
+                xf.Matrix = Compose(local, R, px, py, pz);
             }
-            xf.Matrix = Compose(local, R, px, py, pz);
         }
     }
 

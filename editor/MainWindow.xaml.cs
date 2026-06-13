@@ -54,7 +54,7 @@ public partial class MainWindow : Window
             DemoBanner.Visibility = Visibility.Visible;
         }
 
-        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(33) };  // ~30fps UI
         _timer.Tick += (_, _) => Frame();
         _timer.Start();
 
