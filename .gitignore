@@ -14,6 +14,9 @@ runs/
 # MJX/JAX artifacts
 *.pkl
 mjx/policy.pkl
+mjx/checkpoints/
+mjx/runs/
+mjx/play.gif
 __pycache__/
 # Generated renders (the frame PNG is committed for the README; the gif is large)
 mjx/arena.gif

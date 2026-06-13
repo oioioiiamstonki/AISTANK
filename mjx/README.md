@@ -79,6 +79,39 @@ another — no inter-agent collision.*
 `arena.py` alone (`python mjx/arena.py 16`) just builds the world and renders a
 standing preview, useful for checking colors/layout.
 
+## Train overnight — `train_overnight.py`
+
+The production trainer, built to run unattended for hours and actually converge
+to a walking gait:
+
+- **Observation normalization** (running mean/std) — the ingredient that makes
+  PPO learn to *walk* rather than just balance.
+- **Checkpointing + `--resume`** — atomic checkpoint every `--save-every`
+  updates; resume exactly where it left off. Ctrl-C saves before exiting.
+- **Logging** to `mjx/runs/<timestamp>/train.log` (and `runs/latest`).
+- **Render snapshots** every `--render-every` updates so you can watch it improve.
+- Trains thousands of **independent single-humanoid envs** (fast — small per-env
+  constraint system) and renders the learned per-humanoid policy on a colored
+  **crowd**, so you get both speed and the nice visual.
+
+```bash
+cd /mnt/c/Users/adria/Desktop/AISTANK
+
+# launch detached; ~hundreds of millions of env-steps overnight on an RTX 5080
+MUJOCO_GL=egl nohup ~/mjxenv/bin/python mjx/train_overnight.py \
+    --envs 4096 --updates 20000 --resume > /dev/null 2>&1 &
+
+tail -f mjx/runs/latest/train.log          # watch progress / snapshots
+
+# in the morning: replay the trained crowd to a gif
+~/mjxenv/bin/python mjx/train_overnight.py --play mjx/checkpoints/walk.pkl
+```
+
+Resuming is automatic with `--resume`: re-running the same command continues
+from `mjx/checkpoints/walk.pkl`. Reward rises within the first ~30 updates
+(verified: 0.46 → 1.27 in 50 updates, crowd standing/balancing upright); a
+walking gait emerges over a long run.
+
 ## Notes
 
 - First call pays a one-time XLA compilation cost (~30–60 s) for the whole
