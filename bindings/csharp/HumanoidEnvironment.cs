@@ -90,6 +90,30 @@ public sealed class HumanoidEnvironment : IDisposable
             h, (int)obsDim, (int)actDim, n);
     }
 
+    /// <summary>Number of rigid bodies in the humanoid model (incl. world body 0).</summary>
+    public uint BodyCount => Native.EngineGetBodyCount(_handle);
+
+    /// <summary>Parent body index for each body (0 = world). Length = BodyCount.</summary>
+    public unsafe int[] GetBodyParents()
+    {
+        ThrowIfDisposed();
+        var parents = new int[BodyCount];
+        fixed (int* p = parents) Native.EngineGetBodyParents(_handle, p);
+        return parents;
+    }
+
+    /// <summary>
+    /// World-space body positions (xyz triplets) of one agent, read straight from
+    /// its mjData. Safe to call from any thread for visualization — a frame read
+    /// concurrently with a physics step may tear, which only glitches one frame.
+    /// </summary>
+    public unsafe bool TryGetAgentBodyPositions(uint agent, float[] xyz)
+    {
+        if (_handle == IntPtr.Zero || xyz.Length < BodyCount * 3) return false;
+        fixed (float* p = xyz)
+            return Native.EngineGetAgentBodyPositions(_handle, agent, p) == AistankResult.Ok;
+    }
+
     private unsafe string LastError()
         => System.Runtime.InteropServices.Marshal.PtrToStringUTF8(
                Native.EngineGetLastError(_handle)) ?? "";

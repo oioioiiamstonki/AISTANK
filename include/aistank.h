@@ -84,6 +84,16 @@ AISTANK_API AistankResult Engine_MapRollout(AistankEngine* e,
                                             uint32_t* out_obs_dim,
                                             uint32_t* out_act_dim);
 
+// ---- Pose readout (for visualization) ---------------------------------------
+// Reads one agent's body world positions straight from its mjData (CPU memory,
+// no GPU traffic). Call between Ticks from the loop-owning thread.
+AISTANK_API uint32_t      Engine_GetBodyCount(const AistankEngine* e);
+// out_parents: nbody ints, parent body index per body (0 = world).
+AISTANK_API AistankResult Engine_GetBodyParents(const AistankEngine* e, int32_t* out_parents);
+// out_xyz: nbody * 3 floats, world-space body frame origins of one agent.
+AISTANK_API AistankResult Engine_GetAgentBodyPositions(const AistankEngine* e,
+                                                       uint32_t agent, float* out_xyz);
+
 // ---- Introspection ----------------------------------------------------------
 AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e);
 AISTANK_API uint32_t Engine_GetActionDim(const AistankEngine* e);

@@ -23,6 +23,10 @@ public interface IRobotBackend : IDisposable
     void StartPlaying();
     void Stop();
     RobotStatus GetStatus();
+
+    /// <summary>Real MuJoCo pose of one agent: body world positions + parent indices.
+    /// Returns false when no physics is available (demo mode).</summary>
+    bool TryGetPose(out float[] bodyXyz, out int[] parents);
 }
 
 // ---------------------------------------------------------------- DemoBackend
@@ -55,6 +59,12 @@ public sealed class DemoBackend : IRobotBackend
         return new RobotStatus(_mode, _skill, _mode == RobotMode.Training ? 250_000 : 0, _steps);
     }
 
+    public bool TryGetPose(out float[] bodyXyz, out int[] parents)
+    {
+        bodyXyz = []; parents = [];
+        return false;
+    }
+
     public void Dispose() { }
 }
 
@@ -79,6 +89,9 @@ public sealed class NativeBackend : IRobotBackend
 
     public bool IsReal => true;
 
+    private readonly int[] _bodyParents;
+    private readonly float[] _poseBuffer;
+
     public NativeBackend(string mjcfPath)
     {
         if (!File.Exists(mjcfPath))
@@ -86,11 +99,22 @@ public sealed class NativeBackend : IRobotBackend
         _env = new HumanoidEnvironment(new EnvironmentOptions
         {
             MjcfPath = mjcfPath,
-            NumAgents = 4096,
+            // 1024 agents keeps the editor's tick + PPO update snappy; the
+            // headless CLI sample runs the full 4096-agent batch.
+            NumAgents = 1024,
             RolloutHorizon = 32,
         });
         _trainer = new PpoTrainer(_env.ObservationDim, _env.ActionDim, _env.PolicyParamCount);
         _env.SetPolicyWeights(_trainer.CurrentWeights);
+        _bodyParents = _env.GetBodyParents();
+        _poseBuffer = new float[_env.BodyCount * 3];
+    }
+
+    public bool TryGetPose(out float[] bodyXyz, out int[] parents)
+    {
+        parents = _bodyParents;
+        bodyXyz = _poseBuffer;
+        return _env.TryGetAgentBodyPositions(0, _poseBuffer);
     }
 
     public void StartTraining() => StartLoop(RobotMode.Training);

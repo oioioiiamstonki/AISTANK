@@ -27,7 +27,15 @@ public partial class MainWindow : Window
         InitializeComponent();
 
         _backend = CreateBackend();
-        if (!_backend.IsReal) DemoBanner.Visibility = Visibility.Visible;
+        if (_backend.IsReal)
+        {
+            Title = "Robot School — real MuJoCo physics";
+        }
+        else
+        {
+            Title = "Robot School — demo mode";
+            DemoBanner.Visibility = Visibility.Visible;
+        }
 
         _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(16) };
         _timer.Tick += (_, _) => Frame();
@@ -127,6 +135,13 @@ public partial class MainWindow : Window
         double w = Stage.ActualWidth, h = Stage.ActualHeight;
         if (w < 50 || h < 50) return;
 
+        // Real engine available → draw the actual MuJoCo rigid-body pose.
+        if (_backend.TryGetPose(out float[] xyz, out int[] parents))
+        {
+            DrawRealRobot(xyz, parents, w, h);
+            return;
+        }
+
         double groundY = h * 0.78;
         bool moving = status.Mode != RobotMode.Idle && _fallTimer <= 0;
         double speed = 60 + 180 * status.Skill;
@@ -151,6 +166,50 @@ public partial class MainWindow : Window
         DrawRobot(w * 0.45, groundY, status.Skill, fallen: _fallTimer > 0);
 
         if (_fallTimer > 0.9) SpeechBubble.Text = "Oops! 💥";
+    }
+
+    // Side-on orthographic view of agent 0's real physics state: world +x (walk
+    // direction) maps to screen x with the camera tracking the torso, world +z
+    // (up) maps to screen y. Bones connect each body to its parent.
+    private void DrawRealRobot(float[] xyz, int[] parents, double w, double h)
+    {
+        const double scale = 200;                 // pixels per meter
+        double groundY = h * 0.82;
+        int nbody = parents.Length;
+        if (nbody < 2 || xyz.Length < nbody * 3) return;
+
+        double rootX = xyz[1 * 3 + 0];            // body 1 = torso
+        double camX = w * 0.45;
+
+        // Ground stripes scroll with the robot's real forward progress.
+        double scroll = ((rootX * scale) % 60 + 60) % 60;
+        for (double x = -scroll; x < w; x += 60)
+            Stage.Children.Add(MakeLine(x, groundY + 10, x + 30, groundY + 10,
+                                        Color.FromRgb(0x4e, 0x83, 0x3f), 4));
+        Stage.Children.Add(MakeLine(0, groundY, w, groundY,
+                                    Color.FromRgb(0x44, 0x70, 0x36), 2));
+
+        var bone = Color.FromRgb(0xE8, 0xE8, 0xF0);
+        var joint = Color.FromRgb(0x55, 0x55, 0x70);
+
+        double Sx(int b) => camX + (xyz[b * 3 + 0] - rootX) * scale;
+        double Sy(int b) => groundY - xyz[b * 3 + 2] * scale;
+
+        for (int b = 1; b < nbody; b++)
+        {
+            int p = parents[b];
+            if (p > 0)
+                Stage.Children.Add(MakeLine(Sx(b), Sy(b), Sx(p), Sy(p), bone, 8));
+        }
+        for (int b = 1; b < nbody; b++)
+        {
+            // Torso (body 1) gets a head-sized marker so the robot reads as a person.
+            double r = b == 1 ? 13 : 5;
+            var dot = new Ellipse { Width = r * 2, Height = r * 2, Fill = new SolidColorBrush(joint) };
+            Canvas.SetLeft(dot, Sx(b) - r);
+            Canvas.SetTop(dot, Sy(b) - r - (b == 1 ? 30 : 0));
+            Stage.Children.Add(dot);
+        }
     }
 
     private void DrawRobot(double x, double groundY, float skill, bool fallen)

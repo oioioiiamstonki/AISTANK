@@ -84,7 +84,6 @@ SimulationLoop::SimulationLoop(EngineCore& core)
             D3D12_RESOURCE_STATE_COPY_DEST, nullptr, IID_PPV_ARGS(&m_tsReadback)), "ts rb");
     }
 
-    m_pendingResets.assign(core.Config().num_agents, 0);
 }
 
 SimulationLoop::~SimulationLoop() {
@@ -96,17 +95,18 @@ SimulationLoop::~SimulationLoop() {
 
 // ----------------------------------------------------------- Phase A (CPU)
 
-void SimulationLoop::StepPhysicsAndPack(uint32_t frameSlot, float* outPhysicsMs) {
+void SimulationLoop::StepPhysicsAndPack(uint32_t frameSlot, uint32_t prevSlot,
+                                        float* outPhysicsMs) {
     EngineCore& E = m_core;
     const mjModel* m = E.Model();
     SimBuffers& B = E.Buffers();
     const uint32_t N = B.N, D = B.D, A = B.A;
     const uint32_t substeps = std::max(1u, E.Config().physics_substeps);
 
-    // Actions produced by tick N-1, already resident in the readback slot
-    // (fence consumed by the throttle in Tick()).
-    const float* actions = reinterpret_cast<const float*>(
-        B.actionReadback.mapped[frameSlot]);
+    // Actions + done flags produced by tick N-1 (fence consumed in Tick()).
+    const uint8_t* rb = B.actionReadback.mapped[prevSlot];
+    const float*    actions = reinterpret_cast<const float*>(rb);
+    const uint32_t* dones   = reinterpret_cast<const uint32_t*>(rb + size_t(A) * N * 4);
     float* up = reinterpret_cast<float*>(B.stateUpload.mapped[frameSlot]);
 
     // SoA layout inside the upload slot — offsets must match SrvSlot order
@@ -126,11 +126,12 @@ void SimulationLoop::StepPhysicsAndPack(uint32_t frameSlot, float* outPhysicsMs)
             // Apply policy actions (tick lag = 1; policy is trained with it).
             for (uint32_t a = 0; a < A; ++a)
                 env.data->ctrl[a] = mju_clip(actions[a * N + i], -1.0, 1.0);
-            if (m_pendingResets[i]) {
+            if (m_tick > 0 && dones[i] != 0) {
                 mj_resetData(m, env.data);
                 env.data->qpos[2] += 0.01 * (double(i % 17) / 17.0); // tiny height jitter
                 mj_forward(m, env.data);
                 env.stepsSinceReset = 0;
+                for (uint32_t a = 0; a < A; ++a) env.data->ctrl[a] = 0.0;
             }
             for (uint32_t s = 0; s < substeps; ++s)
                 mj_step(m, env.data);
@@ -287,9 +288,10 @@ void SimulationLoop::RecordReadback(uint32_t frameSlot, bool horizonEnd) {
 
     cl->CopyBufferRegion(B.actionReadback.res[frameSlot].Get(), 0,
                          B.actions.res.Get(), 0, uint64_t(B.A) * B.N * 4);
-    // Done flags ride along inside the action readback slot? No — keep it explicit:
-    // dones land in the rollout buffers; CPU resets are driven by rolloutDone's
-    // last row via the same fence. Scaffold simplification: copy doneFlags too.
+    // Done flags ride in the same slot, right after the actions — the CPU uses
+    // them next tick to mj_resetData fallen agents.
+    cl->CopyBufferRegion(B.actionReadback.res[frameSlot].Get(), uint64_t(B.A) * B.N * 4,
+                         B.doneFlags.res.Get(), 0, uint64_t(B.N) * 4);
     if (horizonEnd) {
         uint64_t off = 0;
         ID3D12Resource* dst = B.rolloutReadback.res[frameSlot].Get();
@@ -315,16 +317,19 @@ void SimulationLoop::RecordReadback(uint32_t frameSlot, bool horizonEnd) {
 
 AistankResult SimulationLoop::Tick(AistankStepStats& outStats) {
     const uint32_t frameSlot = uint32_t(m_tick % kFramesInFlight);
+    const uint32_t prevSlot  = uint32_t((m_tick + kFramesInFlight - 1) % kFramesInFlight);
     EngineCore& E = m_core;
 
     try {
-        // 1. Throttle: this slot's GPU work from tick N-2 must be complete
-        //    before we overwrite its staging memory. This is the ONLY CPU wait.
+        // 1. Throttle: this slot's GPU work from tick N-2 must be complete before
+        //    we overwrite its staging memory, and tick N-1's readback must have
+        //    landed so physics applies the freshest actions / done flags.
         E.CopyQueue().CpuWait(m_copyFenceAt[frameSlot]);
+        E.CopyQueue().CpuWait(m_copyFenceAt[prevSlot]);
 
         // 2+3. CPU physics with previous actions; pack SoA snapshot.
         float physicsMs = 0.f;
-        StepPhysicsAndPack(frameSlot, &physicsMs);
+        StepPhysicsAndPack(frameSlot, prevSlot, &physicsMs);
 
         // 4. Upload.
         RecordUpload(frameSlot);
@@ -393,13 +398,6 @@ AistankResult SimulationLoop::MapRollout(const float** obs, const float** act,
     *val  = reinterpret_cast<const float*>(base + off);
     *horizon = B.horizon; *obsDim = B.O; *actDim = B.A;
     return AISTANK_OK;
-}
-
-void SimulationLoop::ApplyCpuResets(uint32_t /*frameSlot*/) {
-    // Scaffold note: m_pendingResets is refreshed from the done-flags portion of
-    // the rollout readback at horizon boundaries. A per-tick done readback (4KB
-    // for 4096 agents — negligible) can be added to RecordReadback for tighter
-    // reset latency; left as the first TODO for a production pass.
 }
 
 // Helper used by RecordUpload (weights byte size); kept out of the header.

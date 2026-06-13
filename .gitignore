@@ -11,5 +11,13 @@ CMakeUserPresets.json
 *.pdb
 checkpoints/
 runs/
+# Downloaded MuJoCo SDK (users fetch their own — see README)
+third_party/
+# Test run logs
+run_stdout.txt
+run_stderr.txt
+**/run_stdout.txt
+**/run_stderr.txt
 # Published self-contained exe (154 MB — over GitHub's 100 MB limit; shipped via Releases)
 /RobotSchool.exe
+RobotSchool-win-x64.zip

@@ -170,9 +170,14 @@ any intermediate tensors in default heap — and it keeps the entire tick inside
 
 - **Inference + rollout storage**: 100% GPU. Rollout buffers (obs/act/logp/reward/done/value ×
   horizon) are default-heap UAVs appended by `CS_RewardAndTerminate`.
-- **PPO update**: the scaffold reads rollouts back once per *horizon* (e.g. every 32 ticks, not
-  every tick — amortized to noise) into the C# trainer, which owns the optimizer. Updated
-  weights go back through the weight ring. A future `CS_AdamStep` kernel can delete even that.
+- **PPO update**: rollouts are read back once per *horizon* (32 ticks — amortized to noise)
+  into the C# trainer ([`PpoTrainer.cs`](../bindings/csharp/PpoTrainer.cs)), which runs the full
+  algorithm: GAE(λ) advantage estimation, advantage normalization, the clipped-surrogate +
+  value-MSE objective, analytic backprop through the same MLP topology the GPU runs, and a
+  multithreaded Adam step. The policy is treated as `Normal(tanh(z), σ)` with the fixed σ the
+  GPU samples with, so CPU log-probs and GPU actions never disagree. Updated weights go back
+  through the double-buffered weight ring. A future `CS_AdamStep` kernel can move even this
+  on-chip.
 
 ### 3.3 Reward function (walking)
 

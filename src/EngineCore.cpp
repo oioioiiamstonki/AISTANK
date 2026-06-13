@@ -91,9 +91,11 @@ void SimBuffers::Create(ID3D12Device* dev, uint32_t numAgents, uint32_t dof,
 
     instanceXforms.Create(dev, 64ull * 16 /*float4x4, first 64 agents*/, 4, kUavState, true);
 
-    // PCIe staging. Upload slot holds one full SoA physics snapshot.
+    // PCIe staging. Upload slot holds one full SoA physics snapshot. The action
+    // readback slot also carries this tick's done flags (one uint per agent) so
+    // the CPU can mj_resetData fallen agents on the next tick.
     const uint64_t stateBytes   = (uint64_t(2 * D) + 13) * N * 4;
-    const uint64_t actionBytes  = uint64_t(A) * N * 4;
+    const uint64_t actionBytes  = uint64_t(A) * N * 4 + uint64_t(N) * 4;
     const uint64_t rolloutBytes = uint64_t(horizon) * (O + A + 3) * N * 4;
     stateUpload    .Create(dev, stateBytes,             D3D12_HEAP_TYPE_UPLOAD);
     actionReadback .Create(dev, actionBytes,            D3D12_HEAP_TYPE_READBACK);
@@ -206,9 +208,23 @@ static std::vector<uint8_t> LoadFile(const std::string& path) {
     return data;
 }
 
+// Resolve paths relative to aistank.dll so launching from any CWD works.
+static std::string ModuleDir() {
+    HMODULE mod = nullptr;
+    GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                       GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                       reinterpret_cast<LPCSTR>(&ModuleDir), &mod);
+    char path[MAX_PATH] = {};
+    GetModuleFileNameA(mod, path, MAX_PATH);
+    std::string s(path);
+    size_t slash = s.find_last_of("\\/");
+    return slash == std::string::npos ? std::string(".") : s.substr(0, slash);
+}
+
 void EngineCore::LoadPipelines() {
+    const std::string dir = ModuleDir() + "/shaders/";
     auto makeCs = [&](const char* cso, ComPtr<ID3D12PipelineState>& out) {
-        std::vector<uint8_t> blob = LoadFile(std::string("shaders/") + cso);
+        std::vector<uint8_t> blob = LoadFile(dir + cso);
         D3D12_COMPUTE_PIPELINE_STATE_DESC pd{};
         pd.pRootSignature = m_rootSigCompute.Get();
         pd.CS = { blob.data(), blob.size() };
@@ -271,13 +287,18 @@ void EngineCore::CreateBuffersAndDescriptors() {
         m_device->CreateShaderResourceView(b.res.Get(), &d,
             { cpu.ptr + uint64_t(slot) * inc });
     };
+    // Heap layout must follow the root-signature table ranges with APPEND offsets:
+    // SRV table = [t0..t15 → heap 0..15][t32..t33 weights → heap 16..17],
+    // UAV table = [u0..u15 → heap 18..33].
+    constexpr uint32_t kWeightHeapBase = 16;
+    constexpr uint32_t kUavHeapBase    = 18;
     auto uavAt = [&](uint32_t slot, GpuBuffer& b, uint64_t elements) {
         D3D12_UNORDERED_ACCESS_VIEW_DESC d{};
         d.Format = DXGI_FORMAT_UNKNOWN;
         d.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
         d.Buffer = { 0, static_cast<UINT>(elements), 4, 0, D3D12_BUFFER_UAV_FLAG_NONE };
         m_device->CreateUnorderedAccessView(b.res.Get(), nullptr, &d,
-            { cpu.ptr + uint64_t(16 + slot) * inc });  // UAV table starts at heap slot 16
+            { cpu.ptr + uint64_t(kUavHeapBase + slot) * inc });
     };
 
     const SimBuffers& B = m_buffers;
@@ -304,20 +325,21 @@ void EngineCore::CreateBuffersAndDescriptors() {
     uavAt(UAV_EpisodeStats, m_buffers.episodeStats, 4);
     uavAt(UAV_InstanceXforms, m_buffers.instanceXforms, 64ull * 16);
 
-    // Weight slots live at heap slots 32/33 (second SRV range, registers t32/t33).
+    // Weight SRVs (registers t32/t33) sit immediately after the 16-descriptor
+    // first range because the second range uses OFFSET_APPEND.
     {
         D3D12_SHADER_RESOURCE_VIEW_DESC d{};
         d.Format = DXGI_FORMAT_UNKNOWN;
         d.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
         d.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         d.Buffer = { 0, static_cast<UINT>(m_policyParamCount), 4, D3D12_BUFFER_SRV_FLAG_NONE };
-        for (int s = 0; s < 2; ++s)
+        for (uint32_t s = 0; s < 2; ++s)
             m_device->CreateShaderResourceView(m_buffers.weights[s].res.Get(), &d,
-                { cpu.ptr + uint64_t(32 + s) * inc });
+                { cpu.ptr + uint64_t(kWeightHeapBase + s) * inc });
     }
 
-    m_srvTableGpu = { gpu.ptr };                       // table starts at slot 0
-    m_uavTableGpu = { gpu.ptr + 16ull * inc };         // UAV range starts at slot 16
+    m_srvTableGpu = { gpu.ptr };                            // SRV ranges at slot 0
+    m_uavTableGpu = { gpu.ptr + uint64_t(kUavHeapBase) * inc };
 }
 
 void EngineCore::UploadInitialState() {

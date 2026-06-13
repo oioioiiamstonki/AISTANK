@@ -70,6 +70,33 @@ AISTANK_API AistankResult Engine_MapRollout(AistankEngine* e,
     return e->loop->MapRollout(obs, act, rew, done, val, horizon, obsDim, actDim);
 }
 
+AISTANK_API uint32_t Engine_GetBodyCount(const AistankEngine* e) {
+    return e ? static_cast<uint32_t>(e->core->Model()->nbody) : 0;
+}
+
+AISTANK_API AistankResult Engine_GetBodyParents(const AistankEngine* e, int32_t* out_parents) {
+    if (!e || !out_parents) return AISTANK_ERR_BAD_ARG;
+    const mjModel* m = e->core->Model();
+    for (int b = 0; b < m->nbody; ++b)
+        out_parents[b] = m->body_parentid[b];
+    return AISTANK_OK;
+}
+
+AISTANK_API AistankResult Engine_GetAgentBodyPositions(const AistankEngine* e,
+                                                       uint32_t agent, float* out_xyz) {
+    if (!e || !out_xyz) return AISTANK_ERR_BAD_ARG;
+    auto& envs = const_cast<AistankEngine*>(e)->core->Envs();
+    if (agent >= envs.size()) return AISTANK_ERR_BAD_ARG;
+    const mjModel* m = e->core->Model();
+    const mjData* d = envs[agent].data;
+    for (int b = 0; b < m->nbody; ++b) {
+        out_xyz[b * 3 + 0] = static_cast<float>(d->xpos[b * 3 + 0]);
+        out_xyz[b * 3 + 1] = static_cast<float>(d->xpos[b * 3 + 1]);
+        out_xyz[b * 3 + 2] = static_cast<float>(d->xpos[b * 3 + 2]);
+    }
+    return AISTANK_OK;
+}
+
 AISTANK_API uint32_t Engine_GetObservationDim(const AistankEngine* e) {
     return e ? e->core->ObsDim() : 0;
 }

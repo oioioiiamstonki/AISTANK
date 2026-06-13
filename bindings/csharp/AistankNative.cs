@@ -65,6 +65,15 @@ public static unsafe partial class Native
         out float* obs, out float* actions, out float* rewards, out byte* dones,
         out float* values, out uint horizon, out uint obsDim, out uint actDim);
 
+    [LibraryImport(Dll, EntryPoint = "Engine_GetBodyCount")]
+    public static partial uint EngineGetBodyCount(IntPtr engine);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_GetBodyParents")]
+    public static partial AistankResult EngineGetBodyParents(IntPtr engine, int* outParents);
+
+    [LibraryImport(Dll, EntryPoint = "Engine_GetAgentBodyPositions")]
+    public static partial AistankResult EngineGetAgentBodyPositions(IntPtr engine, uint agent, float* outXyz);
+
     [LibraryImport(Dll, EntryPoint = "Engine_GetObservationDim")]
     public static partial uint EngineGetObservationDim(IntPtr engine);
 

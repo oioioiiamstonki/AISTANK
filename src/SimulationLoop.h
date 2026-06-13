@@ -60,18 +60,16 @@ public:
                              uint32_t* horizon, uint32_t* obsDim, uint32_t* actDim);
 
 private:
-    // Phase A (CPU, worker pool): apply previous actions, mj_step × substeps,
-    // scatter qpos/qvel into the SoA upload slot.
-    void StepPhysicsAndPack(uint32_t frameSlot, float* outPhysicsMs);
+    // Phase A (CPU, worker pool): apply previous-tick actions / reset done agents
+    // (both read from prevSlot's readback), mj_step × substeps, scatter qpos/qvel
+    // into the SoA upload slot.
+    void StepPhysicsAndPack(uint32_t frameSlot, uint32_t prevSlot, float* outPhysicsMs);
     // Phase B (copy queue): staged SoA snapshot → default-heap physics mirror.
     void RecordUpload(uint32_t frameSlot);
     // Phase C (compute queue): observe → policy → reward/terminate → resets → instances.
     void RecordComputeChain(uint32_t frameSlot);
     // Phase D (copy queue): actions → readback ring; rollout → readback at horizon end.
     void RecordReadback(uint32_t frameSlot, bool horizonEnd);
-    // CPU-side env reset for agents the GPU flagged done last tick.
-    void ApplyCpuResets(uint32_t frameSlot);
-
     EngineCore& m_core;
     std::unique_ptr<IPolicyExecutor> m_policy;
 
@@ -93,9 +91,6 @@ private:
     // Fence values guarding each ring slot.
     uint64_t m_copyFenceAt[kFramesInFlight]{};
     uint64_t m_computeFenceAt[kFramesInFlight]{};
-
-    // CPU mirror of done flags from the *previous* tick's readback (drives mj_resetData).
-    std::vector<uint8_t> m_pendingResets;
 
     uint64_t m_tick = 0;
     uint32_t m_activeWeightSlot = 0;

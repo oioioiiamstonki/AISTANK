@@ -4,6 +4,8 @@
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <RootNamespace>Aistank</RootNamespace>
+    <!-- Native engine is aistank.dll; keep the managed assembly name distinct. -->
+    <AssemblyName>Aistank.Bindings</AssemblyName>
     <!-- Native DLL is produced by the CMake build; copy alongside consumers. -->
     <AistankNativeDir>..\..\build\Release</AistankNativeDir>
   </PropertyGroup>
@@ -12,5 +14,7 @@
     <None Include="$(AistankNativeDir)\aistank.dll" CopyToOutputDirectory="PreserveNewest" />
     <None Include="$(AistankNativeDir)\mujoco.dll" CopyToOutputDirectory="PreserveNewest"
           Condition="Exists('$(AistankNativeDir)\mujoco.dll')" />
+    <None Include="$(AistankNativeDir)\shaders\*.cso" LinkBase="shaders"
+          CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

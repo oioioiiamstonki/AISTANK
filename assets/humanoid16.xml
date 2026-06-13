@@ -16,6 +16,8 @@
 <mujoco model="humanoid16">
   <compiler angle="radian" inertiafromgeom="true"/>
   <option timestep="0.004166" iterations="6" solver="Newton" integrator="implicitfast"/>
+  <!-- Cap per-env mjData arena: default sizing × 4096 envs would exhaust RAM. -->
+  <size memory="512K"/>
 
   <default>
     <joint armature="0.01" damping="1.5" limited="true"/>
