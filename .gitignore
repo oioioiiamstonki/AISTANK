@@ -15,6 +15,9 @@ runs/
 *.pkl
 mjx/policy.pkl
 __pycache__/
+# Generated renders (the frame PNG is committed for the README; the gif is large)
+mjx/arena.gif
+mjx/arena_preview.png
 # Downloaded MuJoCo SDK (users fetch their own — see README)
 third_party/
 # Test run logs and capture artifacts

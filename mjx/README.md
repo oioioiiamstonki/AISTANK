@@ -52,6 +52,33 @@ Rising mean reward = the humanoid is learning to stay upright and move forward.
 Walking gaits need longer runs (thousands of updates); this scaffold establishes
 the correct, fully-GPU pipeline.
 
+## Watch a crowd train together — `train_arena.py`
+
+Builds **one MuJoCo world holding N humanoids that don't collide with each other**
+(collision-filtered via `contype`/`conaffinity`), each a **distinct color**, and
+trains them all at once on the GPU. Each humanoid is its own RL agent sharing one
+policy; with per-agent exploration and resets they diverge, so you watch a whole
+color-coded crowd learn. For throughput it also vmaps `E` copies of the arena
+(`E·N` agents on the GPU); arena 0 is rendered to a video.
+
+```bash
+~/mjxenv/bin/python mjx/train_arena.py --agents 16 --arenas 32 \
+    --updates 300 --render mjx/arena.gif
+```
+
+Everything that is *training* runs on the GPU — physics (`mjx.step`), inference,
+GAE, and the PPO/Adam update are all jitted onto XLA. The render is offscreen
+(EGL) and writes `arena.gif` plus a still frame:
+
+![colored humanoid crowd](arena_frame.png)
+
+*16 individually-colored humanoids in one arena, driven by the GPU-trained policy
+(reward rose 0.45 → 1.12 over 40 updates in this short run). They pass through one
+another — no inter-agent collision.*
+
+`arena.py` alone (`python mjx/arena.py 16`) just builds the world and renders a
+standing preview, useful for checking colors/layout.
+
 ## Notes
 
 - First call pays a one-time XLA compilation cost (~30–60 s) for the whole
