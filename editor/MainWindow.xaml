@@ -26,6 +26,22 @@
                 </LinearGradientBrush>
             </Border.Background>
             <Grid>
+                <!-- Real 3D viewport (used when the native engine is present). -->
+                <Viewport3D x:Name="View3D" ClipToBounds="True"
+                            MouseDown="View3D_MouseDown" MouseMove="View3D_MouseMove"
+                            MouseUp="View3D_MouseUp" MouseWheel="View3D_MouseWheel">
+                    <Viewport3D.Camera>
+                        <PerspectiveCamera x:Name="Cam3D" FieldOfView="50"
+                                           Position="0,-9,3.2" LookDirection="0,9,-2.2"
+                                           UpDirection="0,0,1"/>
+                    </Viewport3D.Camera>
+                    <ModelVisual3D>
+                        <ModelVisual3D.Content>
+                            <Model3DGroup x:Name="SceneRoot"/>
+                        </ModelVisual3D.Content>
+                    </ModelVisual3D>
+                </Viewport3D>
+                <!-- 2D cartoon canvas (demo-mode fallback only). -->
                 <Canvas x:Name="Stage"/>
                 <TextBlock x:Name="SpeechBubble" FontSize="26" FontWeight="Bold" Foreground="#333"
                            HorizontalAlignment="Center" VerticalAlignment="Top" Margin="0,18,0,0"/>

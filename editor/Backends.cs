@@ -33,6 +33,9 @@ public interface IRobotBackend : IDisposable
 
     /// <summary>Fill agent 0's per-geom world transforms this frame. False in demo mode.</summary>
     bool TryGetGeomPose(float[] xpos, float[] xmat);
+
+    /// <summary>Fill agent <paramref name="agent"/>'s per-geom world transforms. False in demo mode.</summary>
+    bool TryGetAgentGeomPose(int agent, float[] xpos, float[] xmat);
 }
 
 /// <summary>Collision-geom shapes of the humanoid, constant for the run.</summary>
@@ -76,6 +79,7 @@ public sealed class DemoBackend : IRobotBackend
 
     public GeomModel? Geoms => null;
     public bool TryGetGeomPose(float[] xpos, float[] xmat) => false;
+    public bool TryGetAgentGeomPose(int agent, float[] xpos, float[] xmat) => false;
 
     public void Dispose() { }
 }
@@ -144,6 +148,8 @@ public sealed class NativeBackend : IRobotBackend
     public GeomModel? Geoms { get; }
     public bool TryGetGeomPose(float[] xpos, float[] xmat)
         => _env.TryGetAgentGeomPose(0, xpos, xmat);
+    public bool TryGetAgentGeomPose(int agent, float[] xpos, float[] xmat)
+        => _env.TryGetAgentGeomPose((uint)agent, xpos, xmat);
 
     // TRAIN/PLAY just flip the mode flag; the physics loop never stops, so the
     // robot keeps being simulated live in every mode.

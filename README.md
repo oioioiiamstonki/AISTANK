@@ -39,10 +39,13 @@ eight-year-old can use it: three giant buttons and a robot.
 dotnet run --project editor
 ```
 
-When the native engine is built, the viewport shows **agent 0's real MuJoCo pose** — actual
-rigid-body positions read from physics each frame — and the buttons drive real GPU training
-(1024 humanoids in the editor for snappy updates; the headless CLI runs the full 4096). The
-skill meter tracks normalized mean reward. The window title says which mode you're in.
+When the native engine is built, the viewport is a **real 3D scene** (WPF Media3D: perspective
+camera, lighting, mouse-orbit/zoom) showing a **crowd of 12 differently-colored humanoids** —
+each built from the model's actual collision geoms (capsule limbs, sphere heads, box feet) and
+posed every frame from real MuJoCo physics. They're independent environments, so they never
+collide with each other. The buttons drive real GPU training (1024 humanoids under the hood; the
+headless CLI runs the full 4096), the PPO update runs on the GPU, and the skill meter tracks
+normalized mean reward. The window title says which mode you're in.
 
 If the native DLL isn't built yet (or there's no DX12 GPU / MuJoCo), the editor falls back to a
 built-in **demo mode** with a cartoon robot and a simulated learning curve, so the buttons

@@ -4,7 +4,9 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 using IOPath = System.IO.Path;
@@ -22,6 +24,14 @@ public partial class MainWindow : Window
     private double _groundScroll;
     private string _lastMessage = "";
 
+    // 3D viewport (real engine): a colored crowd of the first K agents.
+    private const int CrowdSize = 12;
+    private const double CrowdSpacing = 1.6;
+    private Scene3D? _scene;
+    private double _camAz = 0.0, _camEl = 0.30, _camDist = 9.0;
+    private System.Windows.Point _lastMouse;
+    private bool _dragging;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -29,11 +39,18 @@ public partial class MainWindow : Window
         _backend = CreateBackend();
         if (_backend.IsReal)
         {
-            Title = "Robot School — real MuJoCo physics";
+            Title = "Robot School — real MuJoCo physics (3D)";
+            if (_backend.Geoms is { } geoms)
+            {
+                _scene = new Scene3D(SceneRoot, geoms, (int)geoms.Count, CrowdSize, CrowdSpacing);
+                Stage.Visibility = Visibility.Collapsed;   // hide 2D canvas
+                UpdateCamera();
+            }
         }
         else
         {
             Title = "Robot School — demo mode";
+            View3D.Visibility = Visibility.Collapsed;       // hide 3D, use 2D cartoon
             DemoBanner.Visibility = Visibility.Visible;
         }
 
@@ -97,7 +114,45 @@ public partial class MainWindow : Window
 
         UpdateSkillMeter(status);
         UpdateSpeech(status);
-        DrawScene(status, dt);
+        if (_scene != null) _scene.Update(_backend);   // real 3D crowd
+        else DrawScene(status, dt);                     // 2D demo fallback
+    }
+
+    // ----------------------------------------------------------- 3D camera
+
+    private void UpdateCamera()
+    {
+        var target = new Point3D(0, 0, 0.8);
+        double ce = Math.Cos(_camEl), se = Math.Sin(_camEl);
+        var pos = new Point3D(
+            target.X + _camDist * ce * Math.Sin(_camAz),
+            target.Y - _camDist * ce * Math.Cos(_camAz),
+            target.Z + _camDist * se);
+        Cam3D.Position = pos;
+        Cam3D.LookDirection = new Vector3D(target.X - pos.X, target.Y - pos.Y, target.Z - pos.Z);
+    }
+
+    private void View3D_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragging = true; _lastMouse = e.GetPosition(View3D); View3D.CaptureMouse();
+    }
+    private void View3D_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        _dragging = false; View3D.ReleaseMouseCapture();
+    }
+    private void View3D_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragging) return;
+        var p = e.GetPosition(View3D);
+        _camAz += (p.X - _lastMouse.X) * 0.01;
+        _camEl = Math.Clamp(_camEl - (p.Y - _lastMouse.Y) * 0.01, -0.5, 1.3);
+        _lastMouse = p;
+        UpdateCamera();
+    }
+    private void View3D_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        _camDist = Math.Clamp(_camDist * (1 - e.Delta * 0.0008), 3.0, 25.0);
+        UpdateCamera();
     }
 
     private void UpdateSkillMeter(RobotStatus status)
