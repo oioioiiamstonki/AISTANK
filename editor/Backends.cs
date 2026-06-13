@@ -118,6 +118,9 @@ public sealed class NativeBackend : IRobotBackend
             // headless CLI sample runs the full 4096-agent batch.
             NumAgents = 1024,
             RolloutHorizon = 32,
+            // Lower fall threshold → agents get longer to stumble before a reset,
+            // so the crowd is watchable instead of blinking back to standing.
+            TerminationHeight = 0.4f,
         });
         // GPU-resident PPO: the learning update runs entirely on the GPU. We use
         // the CPU trainer once, only to generate the initial random weights.

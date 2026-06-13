@@ -50,8 +50,8 @@ public sealed class Scene3D
             new Vector3D(-0.4, 0.6, -1.0)));
 
         // Ground plane (big flat box) the crowd shares.
-        var ground = new GeometryModel3D(Box,
-            new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(94, 156, 76))));
+        var groundMat = new DiffuseMaterial(new SolidColorBrush(Color.FromRgb(94, 156, 76)));
+        var ground = new GeometryModel3D(Box, groundMat) { BackMaterial = groundMat };
         double half = _agents * _spacing;
         ground.Transform = new MatrixTransform3D(
             Compose(ScaleMat(half, half, 0.02), Identity(), 0, 0, -0.02));
@@ -84,7 +84,9 @@ public sealed class Scene3D
     private void AddPart(int a, int g, int kind, MeshGeometry3D mesh, Material mat)
     {
         var xf = new MatrixTransform3D(Matrix3D.Identity);
-        _root.Children.Add(new GeometryModel3D(mesh, mat) { Transform = xf });
+        // BackMaterial too: makes each solid render regardless of triangle winding
+        // (no hollow / inverted-looking shapes).
+        _root.Children.Add(new GeometryModel3D(mesh, mat) { BackMaterial = mat, Transform = xf });
         _parts.Add((a, g, kind, xf));
     }
 
@@ -170,8 +172,11 @@ public sealed class Scene3D
             for (int j = 0; j <= slices; j++)
             {
                 double theta = 2 * Math.PI * j / slices;
-                m.Positions.Add(new Point3D(Math.Sin(phi) * Math.Cos(theta),
-                                            Math.Sin(phi) * Math.Sin(theta), Math.Cos(phi)));
+                double x = Math.Sin(phi) * Math.Cos(theta);
+                double y = Math.Sin(phi) * Math.Sin(theta);
+                double z = Math.Cos(phi);
+                m.Positions.Add(new Point3D(x, y, z));
+                m.Normals.Add(new Vector3D(x, y, z));      // outward (unit sphere)
             }
         }
         int row = slices + 1;
@@ -191,8 +196,8 @@ public sealed class Scene3D
         for (int j = 0; j <= slices; j++)
         {
             double t = 2 * Math.PI * j / slices, c = Math.Cos(t), s = Math.Sin(t);
-            m.Positions.Add(new Point3D(c, s, -1));
-            m.Positions.Add(new Point3D(c, s, 1));
+            m.Positions.Add(new Point3D(c, s, -1)); m.Normals.Add(new Vector3D(c, s, 0));
+            m.Positions.Add(new Point3D(c, s, 1));  m.Normals.Add(new Vector3D(c, s, 0));
         }
         for (int j = 0; j < slices; j++)
         {

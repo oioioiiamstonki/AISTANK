@@ -240,13 +240,18 @@ void CS_RewardAndTerminate(uint3 dtid : SV_DispatchThreadID)
                  - WEnergy * energy
                  - WUpright * (1.0 - upright);
 
-    // --- Termination: fell, tipped over, or episode timeout ---
+    // --- Termination: fell, tipped fully over, or episode timeout ---
+    // A short grace period after a reset keeps a freshly-spawned agent from being
+    // re-terminated on the same frame, and only terminate once it is clearly down
+    // (low torso AND well past horizontal) so it has time to stumble and recover —
+    // otherwise an untrained humanoid resets several times per second.
     float rootZ = RootPos[2 * N + agent];
     uint steps = StepCount[agent] + 1;
-    bool fell    = rootZ < TerminationHeight;
-    bool tipped  = upright < 0.3;                           // ~72° from vertical
+    bool grace   = steps < 10;
+    bool fell    = (rootZ < TerminationHeight) && (upright < 0.2);
+    bool tipped  = upright < -0.4;                          // essentially upside down
     bool timeout = steps >= MaxEpisodeSteps;
-    uint done = (fell || tipped) ? 1u : (timeout ? 2u : 0u); // 2 = truncation (no fail penalty)
+    uint done = (!grace && (fell || tipped)) ? 1u : (timeout ? 2u : 0u);
 
     if (done == 1u) reward -= 1.0;                           // terminal fall penalty
 
