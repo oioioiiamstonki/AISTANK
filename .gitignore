@@ -11,6 +11,10 @@ CMakeUserPresets.json
 *.pdb
 checkpoints/
 runs/
+# MJX/JAX artifacts
+*.pkl
+mjx/policy.pkl
+__pycache__/
 # Downloaded MuJoCo SDK (users fetch their own — see README)
 third_party/
 # Test run logs and capture artifacts

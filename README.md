@@ -58,6 +58,7 @@ always do something.
 | [`include/`](include) | Flat C ABI consumed by the C# bindings |
 | [`bindings/csharp/`](bindings/csharp) | Zero-cost C# P/Invoke layer + PPO trainer stub |
 | [`samples/TrainWalking/`](samples/TrainWalking) | Headless CLI training loop |
+| [`mjx/`](mjx) | **GPU MuJoCo physics** — JAX/MJX training (physics + PPO fully on GPU) |
 | [`assets/`](assets) | MJCF humanoid asset (16 DoF) tuned for batched walking RL |
 | [`docs/`](docs) | Detailed architecture: GPU-resident loop, DX12 pipeline, policy execution |
 
@@ -120,8 +121,18 @@ This is no longer a paper scaffold. The native engine **builds and runs end-to-e
 | Observation gather, policy inference, reward, termination | **GPU** (DirectCompute) |
 | PPO update: GAE, forward/backward, gradient reduction, Adam | **GPU** (DirectCompute) |
 
-The only thing left on the CPU is the physics engine itself. Making *that* GPU-resident would
-mean swapping MuJoCo's C API for a GPU physics backend (MJX / NVIDIA Warp) — a separate effort.
+The only thing left on the CPU in this engine is the physics solver itself, because MuJoCo's C
+API is CPU-native.
+
+### Fully-GPU path: MuJoCo physics on the GPU via MJX
+
+For a loop where **even the physics runs on the GPU**, see [`mjx/`](mjx) — a separate JAX project
+built on [MJX](https://mujoco.readthedocs.io/en/stable/mjx.html), MuJoCo's official XLA
+reimplementation. There, `mjx.step` (the MuJoCo solver itself), policy inference, and the PPO
+update all run on the GPU. It trains the same 16-DoF humanoid and the reward rises during
+training (verified on an RTX 5080 in WSL2). It requires JAX-CUDA, which means **Linux or WSL2**
+(not native Windows), so it's a distinct stack from the C++/DX12 editor — the two share only the
+MJCF asset. See [mjx/README.md](mjx/README.md).
 
 Verified on Windows 11 + an AMD/NVIDIA DX12 GPU: `dotnet run --project samples/TrainWalking`
 prints live reward / steps-per-second, and **Robot School** renders agent 0's actual MuJoCo

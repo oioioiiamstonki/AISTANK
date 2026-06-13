@@ -1,0 +1,12 @@
+# GPU-resident MuJoCo physics training (MJX / JAX).
+# Install on Linux or WSL2 with an NVIDIA CUDA GPU:
+#     python3 -m venv ~/mjxenv
+#     ~/mjxenv/bin/pip install -U pip
+#     ~/mjxenv/bin/pip install -r mjx/requirements.txt
+#
+# GPU JAX is NOT supported on native Windows — use WSL2 (Ubuntu) or Linux.
+# Verified on: Ubuntu-24.04 (WSL2), RTX 5080, driver 610.47, Python 3.12.
+jax[cuda12]
+mujoco
+mujoco-mjx
+optax
