@@ -17,6 +17,7 @@ mjx/policy.pkl
 mjx/checkpoints/
 mjx/runs/
 mjx/play.gif
+mjx/soccer_scene.png
 __pycache__/
 # Generated renders (the frame PNG is committed for the README; the gif is large)
 mjx/arena.gif
