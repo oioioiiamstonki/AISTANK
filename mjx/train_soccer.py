@@ -44,8 +44,8 @@ def transfer_from_walk(loco_path, obs_dim, act_dim, key):
 
 
 def build(env, E, T, epochs):
-    vstep, vreset, vobs, vrew = (jax.vmap(env.step), jax.vmap(env.reset),
-                                 jax.vmap(env.observe), jax.vmap(env.reward_done))
+    vstep, vobs, vrew = (jax.vmap(env.step), jax.vmap(env.observe), jax.vmap(env.reward_done))
+    vreset_done = jax.vmap(env.reset_done)
 
     @jax.jit
     def rollout(params, mean, std, data, obs, key):
@@ -59,9 +59,7 @@ def build(env, E, T, epochs):
             data = vstep(data, ctrl)
             rew, done = vrew(data)                                   # (E,4),(E,)
             key, k = jax.random.split(key)
-            rdata = vreset(jax.random.split(k, action.shape[0]))
-            data = jax.tree.map(
-                lambda a, b: jp.where(done.reshape((-1,) + (1,) * (a.ndim - 1)), b, a), data, rdata)
+            data = vreset_done(data, done, jax.random.split(k, action.shape[0]))
             nobs = vobs(data)
             return (data, nobs, key), (obs, action, lp, v, rew, done)
         carry, traj = jax.lax.scan(stepfn, (data, obs, key), None, length=T)

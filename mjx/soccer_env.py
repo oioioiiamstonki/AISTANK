@@ -95,6 +95,22 @@ class SoccerEnv:
         dx = dx.replace(qpos=qpos)
         return mjx.forward(self.mx, dx)
 
+    @partial(jax.jit, static_argnums=0)
+    def reset_done(self, dx, done, key):
+        """Cheap per-step auto-reset: edit qpos/qvel only when the episode ended.
+        No mjx.forward and no full-pytree copy (the next mjx.step recomputes
+        derived quantities; obs/reward read qpos/qvel directly), so the rollout
+        avoids a full reset for every env on every step."""
+        kj, kb = jax.random.split(key)
+        qpos = self.qpos0 + 0.01 * jax.random.normal(kj, (self.mx.nq,))
+        qpos = qpos.at[BALL_Q:BALL_Q + 2].set(0.3 * jax.random.normal(kb, (2,)))
+        qpos = qpos.at[BALL_Q + 2].set(scene.BALL_R)
+        qvel = jp.zeros(self.mx.nv)
+        return dx.replace(
+            qpos=jp.where(done, qpos, dx.qpos),
+            qvel=jp.where(done, qvel, dx.qvel),
+            xfrc_applied=jp.where(done, jp.zeros_like(dx.xfrc_applied), dx.xfrc_applied))
+
     # ------------------------------------------------------------ obs / reward
 
     def _player_slice(self, dx, p):
