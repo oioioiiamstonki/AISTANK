@@ -119,7 +119,7 @@ class SoccerEnv:
 
         return jp.stack([one(p) for p in range(NP)])           # (4, obs_dim)
 
-    def reward_done(self, dx, prev_ball_x):
+    def reward_done(self, dx):
         ball = dx.qpos[BALL_Q:BALL_Q + 3]
         ball_v = dx.qvel[BALL_V:BALL_V + 3]
         rewards = []

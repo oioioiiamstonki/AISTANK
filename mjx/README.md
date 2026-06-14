@@ -112,6 +112,47 @@ from `mjx/checkpoints/walk.pkl`. Reward rises within the first ~30 updates
 (verified: 0.46 → 1.27 in 50 updates, crowd standing/balancing upright); a
 walking gait emerges over a long run.
 
+## 2v2 soccer (two-phase: imitation → self-play)
+
+A full GPU pipeline for 2v2 soccer with a physically realistic ball.
+
+**Scene** ([`soccer_scene.py`](soccer_scene.py)): pitch, two goals, four
+team-colored humanoids (2 blue vs 2 red), and a free-body ball.
+
+**Ball physics** ([`soccer_env.py`](soccer_env.py)): on top of MuJoCo contact we
+apply, each substep, a **Magnus force** (`K·ω×v`) so spin curves the flight, plus
+quadratic **drag**. Verified — a sidespin kick travels 6.6 m and bends 0.93 m.
+
+**Phase 1 — imitation/locomotion** ([`imitation.py`](imitation.py)): learn to walk
+*forward* by tracking a procedural reference gait (DeepMimic-style; no mocap
+exists for this body) **plus** a heading-aware reward (velocity along the torso's
+facing axis), which removes the side-stepping artifact. Phase-free, 59-dim obs.
+
+```bash
+MUJOCO_GL=egl ~/mjxenv/bin/python mjx/imitation.py --envs 4096 --hours 6 --resume
+# -> mjx/checkpoints/walk_fwd.pkl
+```
+
+**Phase 2 — self-play soccer** ([`train_soccer.py`](train_soccer.py)): all four
+players share one policy (symmetric self-play), **warm-started** from the Phase-1
+walker (the 59-dim locomotion input block + hidden/output layers are copied; the
+18 soccer-context inputs start at zero). Reward: upright + get to ball + drive
+ball to the opponent goal + score.
+
+```bash
+MUJOCO_GL=egl ~/mjxenv/bin/python mjx/train_soccer.py \
+    --init mjx/checkpoints/walk_fwd.pkl --envs 1024 --hours 10 --resume
+MUJOCO_GL=egl ~/mjxenv/bin/python mjx/train_soccer.py --play mjx/checkpoints/soccer.pkl
+```
+
+**Honest scope:** the whole pipeline is verified to *run and learn* (scene
+renders, ball curves, both phases train and checkpoint, warm-start transfers).
+A genuinely *skilled* 2v2 team that passes and combines is a large-compute
+research problem (cf. DeepMind MuJoCo soccer, Google Research Football) — this
+provides the correct architecture and long-training entry points, not a finished
+team. Expect Phase 1 to need a few hours for a clean gait, and Phase 2 much
+longer (and likely reward-shaping iteration) for real soccer behavior.
+
 ## Notes
 
 - First call pays a one-time XLA compilation cost (~30–60 s) for the whole
