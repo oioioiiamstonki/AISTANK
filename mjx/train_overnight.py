@@ -166,6 +166,7 @@ def main():
     ap.add_argument("--updates", type=int, default=20000)
     ap.add_argument("--epochs", type=int, default=4)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--hours", type=float, default=0.0, help="stop after this many wall-clock hours")
     ap.add_argument("--save-every", type=int, default=100)
     ap.add_argument("--render-every", type=int, default=500)
     ap.add_argument("--render-agents", type=int, default=16)
@@ -251,6 +252,8 @@ def main():
                 log(f"  render @ {u}  ->  runs/{ts}/frame_{u:06d}.png")
             except Exception as e:
                 log(f"  render failed: {e}")
+        if args.hours and (time.time() - t0) >= args.hours * 3600:
+            log(f"reached {args.hours}h wall-clock limit — finishing"); break
         if interrupted["v"]:
             log("interrupted — saving and exiting"); break
 
