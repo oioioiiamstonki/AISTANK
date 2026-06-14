@@ -112,7 +112,7 @@ def build(env, E, T, epochs):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--envs", type=int, default=1024)
+    ap.add_argument("--envs", type=int, default=256)   # 4 players each; >~384 OOMs 16GB VRAM
     ap.add_argument("--rollout", type=int, default=40)
     ap.add_argument("--updates", type=int, default=40000)
     ap.add_argument("--epochs", type=int, default=4)
